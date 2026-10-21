@@ -1,0 +1,14 @@
+{
+  "appId": "com.jeparacargo.app",
+  "appName": "JeparaCargo",
+  "webDir": "public",
+  "server": {
+    "url": "https://defense-rope-coat.ngrok-free.dev",
+    "cleartext": true
+  },
+  "plugins": {
+    "Fullscreen": {
+      "activateOnLoad": true
+    }
+  }
+}

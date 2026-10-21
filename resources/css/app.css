@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Prevent long-press context menu and text selection in Capacitor App */
+body {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+/* Allow text selection in inputs and textareas */
+input, textarea {
+    -webkit-user-select: auto !important;
+    user-select: auto !important;
+}
+
+/* ========================================================
+   Capacitor Native Barcode Scanner (Transparent Overlay)
+   ======================================================== */
+html.barcode-scanner-active,
+body.barcode-scanner-active,
+body.barcode-scanner-active #app,
+body.barcode-scanner-active .min-h-screen,
+body.barcode-scanner-active main {
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+body.barcode-scanner-active .barcode-scanner-hide-content {
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+@keyframes scannerLaserMotion {
+    0% {
+        top: 8%;
+        opacity: 0.8;
+    }
+    50% {
+        top: 88%;
+        opacity: 1;
+    }
+    100% {
+        top: 8%;
+        opacity: 0.8;
+    }
+}
+
+.animate-scanner-laser {
+    animation: scannerLaserMotion 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
