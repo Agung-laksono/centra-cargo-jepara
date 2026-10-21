@@ -101,6 +101,8 @@ class SettingController extends Controller
             'reverb_scheme' => $integrationSettings['reverb_scheme'] ?? env('REVERB_SCHEME', 'https'),
         ] : null;
 
+        $backups = $isSuperAdmin ? app(\App\Services\BackupService::class)->getBackupsList() : [];
+
         return Inertia::render('Settings/Index', [
             'app' => $appData,
             'company' => $companyData,
