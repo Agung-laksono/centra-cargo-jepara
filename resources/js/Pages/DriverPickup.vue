@@ -552,6 +552,34 @@ const setupDriverPageEcho = () => {
 
     driverPageEchoChannel.listen('.partnership.status_updated', handlePartnershipStatus);
     driverPageEchoChannel.listen('partnership.status_updated', handlePartnershipStatus);
+
+    // Channel Manifest Realtime untuk Tugas Penjemputan
+    if (props.manifest?.id) {
+        echo.channel(`manifest.${props.manifest.id}`)
+            .listen('.manifest.updated', () => {
+                if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+                router.reload({ 
+                    preserveScroll: true,
+                    onSuccess: () => initializeOfflineDB() 
+                });
+            })
+            .listen('.pickup.completed', () => {
+                router.reload({ 
+                    preserveScroll: true,
+                    onSuccess: () => initializeOfflineDB() 
+                });
+            });
+    }
+
+    // Global Manifest Handshake (Untuk supir standby saat di-claim / di-assign)
+    echo.channel('manifests')
+        .listen('.manifest.handshaked', (e) => {
+            if (e.driverId === user.driver?.id || e.driverId === user.id) {
+                if (navigator.vibrate) navigator.vibrate([150, 80, 150]);
+                playBeep('success');
+                router.reload({ preserveScroll: true });
+            }
+        });
 };
 
 onMounted(() => {
@@ -559,13 +587,17 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-    if (driverPageEchoChannel) {
-        try {
-            driverPageEchoChannel.stopListening('.partnership.status_updated');
-            driverPageEchoChannel.stopListening('partnership.status_updated');
-        } catch (e) {}
-        driverPageEchoChannel = null;
-    }
+    try {
+        const echo = getEcho();
+        const user = usePage().props.auth?.user;
+        if (echo && user) {
+            echo.leave(`user.${user.id}`);
+            if (props.manifest?.id) {
+                echo.leave(`manifest.${props.manifest.id}`);
+            }
+            echo.leave('manifests');
+        }
+    } catch (e) {}
 });
 </script>
 

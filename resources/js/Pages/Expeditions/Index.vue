@@ -1,8 +1,9 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import ExpeditionHandshakeModal from '@/Components/ExpeditionHandshakeModal.vue';
+import { useEcho } from '@/Composables/useEcho';
 
 const props = defineProps({
     expeditions: Array,
@@ -65,6 +66,27 @@ const deleteExpedition = (expedition) => {
         router.delete(route('expeditions.destroy', expedition.id));
     }
 };
+
+const { getEcho } = useEcho();
+
+onMounted(() => {
+    const echo = getEcho();
+    if (echo) {
+        echo.channel('platform')
+            .listen('.expedition.registered', () => {
+                router.reload({ only: ['expeditions'], preserveScroll: true, preserveState: true });
+            });
+    }
+});
+
+onUnmounted(() => {
+    try {
+        const echo = getEcho();
+        if (echo) {
+            echo.leave('platform');
+        }
+    } catch (e) {}
+});
 </script>
 
 <template>

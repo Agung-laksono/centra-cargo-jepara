@@ -1,8 +1,9 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import SwipeableTabs from '@/Components/SwipeableTabs.vue';
 import { useTabCache } from '@/Composables/useTabCache';
+import { useEcho } from '@/Composables/useEcho';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -78,8 +79,8 @@ const props = defineProps({
             dalam_perjalanan: 0,
             terkirim_bulan_ini: 0,
             uang_cod_di_supir: 0,
-            paket_bermasalah: 2,
-            omset_bulan_ini: 15450000
+            paket_bermasalah: 0,
+            omset_bulan_ini: 0
         })
     },
     drivers_location: {
@@ -87,6 +88,18 @@ const props = defineProps({
         default: () => []
     }
 });
+
+// Setup Live Reactive State
+const liveStats = ref({ ...props.stats });
+const liveSuperStats = ref({ ...props.super_stats });
+
+watch(() => props.stats, (newVal) => {
+    liveStats.value = { ...newVal };
+}, { deep: true });
+
+watch(() => props.super_stats, (newVal) => {
+    liveSuperStats.value = { ...newVal };
+}, { deep: true });
 
 // Setup Tabs
 const dashboardTabs = [
@@ -181,6 +194,139 @@ const formatRupiah = (angka) => {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka || 0);
 };
 
+// ---------------------------------------------------------
+// REALTIME PUSHER / ECHO INTEGRATION
+// ---------------------------------------------------------
+const { getEcho } = useEcho();
+let reloadTimer = null;
+
+const triggerDebouncedReload = () => {
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(() => {
+        router.reload({
+            only: props.is_super_admin 
+                ? ['super_stats', 'expeditions_summary', 'platform_chart', 'recent_platform_activities']
+                : ['stats', 'shipments', 'drivers_location'],
+            preserveScroll: true,
+            preserveState: true,
+        });
+    }, 400);
+};
+
+onMounted(() => {
+    const echo = getEcho();
+    if (!echo) return;
+
+    // 1. Channel Shipments (Resi Dibuat & Status Berubah)
+    echo.channel('shipments')
+        .listen('.shipment.created', (e) => {
+            liveStats.value.menunggu_pickup = (liveStats.value.menunggu_pickup || 0) + 1;
+            liveSuperStats.value.total_shipments_month = (liveSuperStats.value.total_shipments_month || 0) + 1;
+            recentActivities.value.unshift({
+                id: Date.now(),
+                type: 'admin',
+                title: `Resi Baru: ${e.trackingNumber} (${e.recipientName || 'Penerima'})`,
+                time: 'Baru saja',
+                icon: 'ri-file-list-3-fill',
+                color: 'text-purple-500',
+                bg: 'bg-purple-50'
+            });
+            triggerDebouncedReload();
+        })
+        .listen('.shipment.status_updated', (e) => {
+            recentActivities.value.unshift({
+                id: Date.now(),
+                type: 'warehouse',
+                title: `Status ${e.trackingNumber}: ${e.status}`,
+                time: 'Baru saja',
+                icon: 'ri-truck-fill',
+                color: 'text-primary',
+                bg: 'bg-primary/10'
+            });
+            triggerDebouncedReload();
+        })
+        .listen('.shipment.delivered', (e) => {
+            liveStats.value.terkirim_bulan_ini = (liveStats.value.terkirim_bulan_ini || 0) + 1;
+            recentActivities.value.unshift({
+                id: Date.now(),
+                type: 'delivery',
+                title: `Paket ${e.trackingNumber} Selesai Terkirim (${e.recipientName})`,
+                time: 'Baru saja',
+                icon: 'ri-checkbox-circle-fill',
+                color: 'text-green-500',
+                bg: 'bg-green-50'
+            });
+            triggerDebouncedReload();
+        });
+
+    // 2. Channel Warehouse (Koli Inbound)
+    echo.channel('warehouse')
+        .listen('.koli.inbound.scanned', (e) => {
+            recentActivities.value.unshift({
+                id: Date.now(),
+                type: 'warehouse',
+                title: `Koli diverifikasi di gudang: ${e.trackingNumber}`,
+                time: 'Baru saja',
+                icon: 'ri-box-3-fill',
+                color: 'text-blue-500',
+                bg: 'bg-blue-50'
+            });
+            triggerDebouncedReload();
+        });
+
+    // 3. Channel Manifests (Handshake & Selesai Pickup)
+    echo.channel('manifests')
+        .listen('.manifest.handshaked', (e) => {
+            recentActivities.value.unshift({
+                id: Date.now(),
+                type: 'pickup',
+                title: `Handshake Supir: ${e.driverName || 'Supir'}`,
+                time: 'Baru saja',
+                icon: 'ri-qr-scan-2-line',
+                color: 'text-amber-500',
+                bg: 'bg-amber-50'
+            });
+            triggerDebouncedReload();
+        })
+        .listen('.pickup.completed', (e) => {
+            recentActivities.value.unshift({
+                id: Date.now(),
+                type: 'pickup',
+                title: `${e.driverName || 'Supir'} selesai pickup ${e.koliCount} koli (${e.senderName || 'Pengirim'})`,
+                time: 'Baru saja',
+                icon: 'ri-car-fill',
+                color: 'text-emerald-500',
+                bg: 'bg-emerald-50'
+            });
+            triggerDebouncedReload();
+        });
+
+    // 4. Channel Platform (Super Admin)
+    if (props.is_super_admin) {
+        echo.channel('platform')
+            .listen('.expedition.registered', (e) => {
+                liveSuperStats.value.total_expeditions = (liveSuperStats.value.total_expeditions || 0) + 1;
+                liveSuperStats.value.active_expeditions = (liveSuperStats.value.active_expeditions || 0) + 1;
+                triggerDebouncedReload();
+            });
+    }
+});
+
+onUnmounted(() => {
+    clearTimeout(reloadTimer);
+    try {
+        const echo = getEcho();
+        if (echo) {
+            echo.leave('shipments');
+            echo.leave('warehouse');
+            echo.leave('manifests');
+            if (props.is_super_admin) {
+                echo.leave('platform');
+            }
+        }
+    } catch (e) {}
+});
+
 
 </script>
 
@@ -251,10 +397,10 @@ const formatRupiah = (angka) => {
                     <div>
                         <span class="text-xs text-gray-400 font-medium block">Mitra Ekspedisi</span>
                         <h3 class="text-2xl font-black text-gray-800 leading-tight">
-                            {{ props.super_stats?.total_expeditions || 0 }}
+                            {{ liveSuperStats?.total_expeditions || 0 }}
                         </h3>
                         <span class="text-[11px] text-emerald-600 font-semibold flex items-center gap-0.5 mt-0.5">
-                            <i class="ri-checkbox-circle-fill"></i> {{ props.super_stats?.active_expeditions || 0 }} Aktif Beroperasi
+                            <i class="ri-checkbox-circle-fill"></i> {{ liveSuperStats?.active_expeditions || 0 }} Aktif Beroperasi
                         </span>
                     </div>
                 </div>
@@ -267,10 +413,10 @@ const formatRupiah = (angka) => {
                     <div>
                         <span class="text-xs text-gray-400 font-medium block">Resi Bulan Ini</span>
                         <h3 class="text-2xl font-black text-gray-800 leading-tight">
-                            {{ props.super_stats?.total_shipments_month || 0 }}
+                            {{ liveSuperStats?.total_shipments_month || 0 }}
                         </h3>
                         <span class="text-[11px] text-gray-500 font-medium mt-0.5 block">
-                            {{ props.super_stats?.total_koli_month || 0 }} Koli terdaftar
+                            {{ liveSuperStats?.total_koli_month || 0 }} Koli terdaftar
                         </span>
                     </div>
                 </div>
@@ -283,7 +429,7 @@ const formatRupiah = (angka) => {
                     <div>
                         <span class="text-xs text-gray-400 font-medium block">Pengguna Sistem</span>
                         <h3 class="text-2xl font-black text-gray-800 leading-tight">
-                            {{ props.super_stats?.total_users || 0 }}
+                            {{ liveSuperStats?.total_users || 0 }}
                         </h3>
                         <span class="text-[11px] text-purple-600 font-semibold mt-0.5 block">
                             Pusat & Seluruh Cabang
@@ -299,7 +445,7 @@ const formatRupiah = (angka) => {
                     <div>
                         <span class="text-xs text-gray-400 font-medium block">Supir Terdaftar</span>
                         <h3 class="text-2xl font-black text-gray-800 leading-tight">
-                            {{ props.super_stats?.active_drivers || 0 }}
+                            {{ liveSuperStats?.active_drivers || 0 }}
                         </h3>
                         <span class="text-[11px] text-amber-700 font-semibold mt-0.5 block">
                             Armada Pickup & Lintas
@@ -428,7 +574,7 @@ const formatRupiah = (angka) => {
                                     <i class="ri-car-fill"></i>
                                 </div>
                                 <div>
-                                    <p class="text-3xl md:text-4xl font-semibold text-gray-900 tracking-tight mb-1">{{ props.stats.menunggu_pickup }}</p>
+                                    <p class="text-3xl md:text-4xl font-semibold text-gray-900 tracking-tight mb-1">{{ liveStats.menunggu_pickup }}</p>
                                     <p class="text-xs md:text-sm text-gray-500 font-medium">Menunggu Pickup</p>
                                 </div>
                             </div>
@@ -439,7 +585,7 @@ const formatRupiah = (angka) => {
                                     <i class="ri-box-3-fill"></i>
                                 </div>
                                 <div>
-                                    <p class="text-3xl md:text-4xl font-semibold text-gray-900 tracking-tight mb-1">{{ props.stats.di_gudang }}</p>
+                                    <p class="text-3xl md:text-4xl font-semibold text-gray-900 tracking-tight mb-1">{{ liveStats.di_gudang }}</p>
                                     <p class="text-xs md:text-sm text-gray-500 font-medium">Di Gudang</p>
                                 </div>
                             </div>
@@ -450,7 +596,7 @@ const formatRupiah = (angka) => {
                                     <i class="ri-truck-fill"></i>
                                 </div>
                                 <div>
-                                    <p class="text-3xl md:text-4xl font-semibold text-gray-900 tracking-tight mb-1">{{ props.stats.dalam_perjalanan }}</p>
+                                    <p class="text-3xl md:text-4xl font-semibold text-gray-900 tracking-tight mb-1">{{ liveStats.dalam_perjalanan }}</p>
                                     <p class="text-xs md:text-sm text-gray-500 font-medium">Dalam Perjalanan</p>
                                 </div>
                             </div>
@@ -461,7 +607,7 @@ const formatRupiah = (angka) => {
                                     <i class="ri-checkbox-circle-fill"></i>
                                 </div>
                                 <div>
-                                    <p class="text-3xl md:text-4xl font-semibold text-gray-900 tracking-tight mb-1">{{ props.stats.terkirim_bulan_ini }}</p>
+                                    <p class="text-3xl md:text-4xl font-semibold text-gray-900 tracking-tight mb-1">{{ liveStats.terkirim_bulan_ini }}</p>
                                     <p class="text-xs md:text-sm text-gray-500 font-medium">Terkirim (Bulan Ini)</p>
                                 </div>
                             </div>
@@ -472,7 +618,7 @@ const formatRupiah = (angka) => {
                                     <i class="ri-error-warning-fill"></i>
                                 </div>
                                 <div>
-                                    <p class="text-3xl md:text-4xl font-semibold text-red-600 tracking-tight mb-1">{{ props.stats.paket_bermasalah }}</p>
+                                    <p class="text-3xl md:text-4xl font-semibold text-red-600 tracking-tight mb-1">{{ liveStats.paket_bermasalah }}</p>
                                     <p class="text-xs md:text-sm text-red-500 font-medium">Kendala / Retur</p>
                                 </div>
                             </div>

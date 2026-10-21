@@ -111,6 +111,12 @@ class ExpeditionController extends Controller
             ]);
         }
 
+        try {
+            broadcast(new \App\Events\ExpeditionRegistered($expedition));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Broadcast ExpeditionRegistered error: '.$e->getMessage());
+        }
+
         return redirect()->route('expeditions.index')->with(
             'success', 
             "Ekspedisi {$expedition->name} berhasil dibuat beserta 4 akun starter (admin@{$domain}, pickup@{$domain}, lintas@{$domain}, gudang@{$domain}) dengan password default 'password'."

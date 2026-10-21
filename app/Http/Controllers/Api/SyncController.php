@@ -80,6 +80,12 @@ class SyncController extends Controller
                             'Selesai',
                             'Barang telah diterima oleh penerima ('.$shipment->recipient_name.').'
                         );
+
+                        try {
+                            broadcast(new \App\Events\ShipmentDelivered($shipment));
+                        } catch (\Throwable $e) {
+                            Log::warning('Broadcast ShipmentDelivered error: '.$e->getMessage());
+                        }
                     }
                 }
             }
@@ -117,6 +123,7 @@ class SyncController extends Controller
 
                     // 2. Cek shipment-shipment yang terpengaruh
                     $shipmentIds = Koli::whereIn('id', $koliIds)->pluck('shipment_id')->unique();
+                    $affectedShipments = [];
 
                     foreach ($shipmentIds as $shipmentId) {
                         $shipment = Shipment::with('kolis')->find($shipmentId);
@@ -137,10 +144,23 @@ class SyncController extends Controller
                                 $newStatus,
                                 'Barang telah tiba dan diverifikasi masuk Gudang Utama.'
                             );
+
+                            $affectedShipments[] = [
+                                'id' => $shipmentId,
+                                'status' => $newStatus,
+                            ];
                         }
                     }
 
                     DB::commit();
+
+                    foreach ($affectedShipments as $aff) {
+                        try {
+                            broadcast(new \App\Events\KoliInboundScanned($aff['id'], $koliIds, $aff['status']));
+                        } catch (\Throwable $e) {
+                            Log::warning('Broadcast KoliInboundScanned error: '.$e->getMessage());
+                        }
+                    }
                 }
             }
 
@@ -223,6 +243,13 @@ class SyncController extends Controller
                 }
 
                 DB::commit();
+
+                try {
+                    $sender = \App\Models\Sender::find($senderId);
+                    broadcast(new \App\Events\PickupCompleted($manifest, (int)$senderId, (int)$scannedCount, (bool)$isForce, $sender?->business_name ?? $sender?->owner_name));
+                } catch (\Throwable $e) {
+                    Log::warning('Broadcast PickupCompleted error: '.$e->getMessage());
+                }
             }
 
             return response()->json(['status' => 'success', 'message' => 'Synced']);

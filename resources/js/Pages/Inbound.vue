@@ -5,6 +5,7 @@ import AdminLayout from '@/Layouts/AdminLayout.vue';
 import BarcodeScanner from '@/Components/BarcodeScanner.vue';
 import localforage from 'localforage';
 import axios from 'axios';
+import { useEcho } from '@/Composables/useEcho';
 import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import { BarcodeScanner as NativeBarcodeScanner, BarcodeFormat, LensFacing } from '@capacitor-mlkit/barcode-scanning';
@@ -162,6 +163,19 @@ const initializeOfflineDB = async () => {
     }
 };
 
+const { getEcho } = useEcho();
+
+const reloadInboundData = () => {
+    router.reload({
+        only: ['shipments'],
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => {
+            initializeOfflineDB();
+        }
+    });
+};
+
 onMounted(async () => {
     await initializeOfflineDB();
     
@@ -175,12 +189,42 @@ onMounted(async () => {
         initializeOfflineDB();
     });
     syncToServer();
+
+    // Echo Realtime Listeners
+    const echo = getEcho();
+    if (echo) {
+        echo.channel('warehouse')
+            .listen('.koli.inbound.scanned', () => {
+                reloadInboundData();
+            });
+
+        echo.channel('shipments')
+            .listen('.shipment.created', () => {
+                reloadInboundData();
+            })
+            .listen('.shipment.status_updated', () => {
+                reloadInboundData();
+            });
+
+        echo.channel('manifests')
+            .listen('.pickup.completed', () => {
+                reloadInboundData();
+            });
+    }
 });
 
 onUnmounted(() => {
     window.removeEventListener('online', syncToServer);
     clearTimeout(scanMessageTimer);
     clearTimeout(highlightTimer);
+    try {
+        const echo = getEcho();
+        if (echo) {
+            echo.leave('warehouse');
+            echo.leave('shipments');
+            echo.leave('manifests');
+        }
+    } catch (e) {}
 });
 
 // Watcher simpan scans ke localforage

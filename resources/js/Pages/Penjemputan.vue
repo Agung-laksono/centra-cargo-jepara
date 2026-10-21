@@ -12,7 +12,7 @@ import { useEcho } from '@/Composables/useEcho';
 const { getEcho } = useEcho();
 let pickupEchoChannel = null;
 
-const handleHandshakeSuccess = () => {
+const handleRealtimeUpdate = () => {
     router.reload({ preserveScroll: true, preserveState: true });
 };
 
@@ -20,18 +20,25 @@ onMounted(() => {
     const echo = getEcho();
     if (echo) {
         pickupEchoChannel = echo.channel('manifests');
-        pickupEchoChannel.listen('.manifest.handshaked', () => {
-            handleHandshakeSuccess();
-        });
+        pickupEchoChannel
+            .listen('.manifest.handshaked', () => handleRealtimeUpdate())
+            .listen('.pickup.completed', () => handleRealtimeUpdate())
+            .listen('.manifest.updated', () => handleRealtimeUpdate());
+
+        echo.channel('shipments')
+            .listen('.shipment.created', () => handleRealtimeUpdate())
+            .listen('.shipment.status_updated', () => handleRealtimeUpdate());
     }
 });
 
 onUnmounted(() => {
-    if (pickupEchoChannel) {
-        try {
-            getEcho()?.leave('manifests');
-        } catch (e) {}
-    }
+    try {
+        const echo = getEcho();
+        if (echo) {
+            echo.leave('manifests');
+            echo.leave('shipments');
+        }
+    } catch (e) {}
 });
 
 // Logika scroll untuk menyembunyikan filter & mendeteksi posisi sticky

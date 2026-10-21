@@ -47,18 +47,35 @@ onMounted(() => {
     const echo = getEcho();
     if (echo) {
         manifestsEchoChannel = echo.channel('manifests');
-        manifestsEchoChannel.listen('.manifest.handshaked', (event) => {
-            handleHandshakeSuccess(event);
-        });
+        manifestsEchoChannel
+            .listen('.manifest.handshaked', (event) => {
+                handleHandshakeSuccess(event);
+            })
+            .listen('.pickup.completed', () => {
+                router.reload({ preserveScroll: true, preserveState: true });
+            })
+            .listen('.manifest.updated', () => {
+                router.reload({ preserveScroll: true, preserveState: true });
+            });
+
+        echo.channel('shipments')
+            .listen('.shipment.delivered', () => {
+                router.reload({ preserveScroll: true, preserveState: true });
+            })
+            .listen('.shipment.status_updated', () => {
+                router.reload({ preserveScroll: true, preserveState: true });
+            });
     }
 });
 
 onUnmounted(() => {
-    if (manifestsEchoChannel) {
-        try {
-            getEcho()?.leave('manifests');
-        } catch (e) {}
-    }
+    try {
+        const echo = getEcho();
+        if (echo) {
+            echo.leave('manifests');
+            echo.leave('shipments');
+        }
+    } catch (e) {}
 });
 
 const openQrModal = (m) => {

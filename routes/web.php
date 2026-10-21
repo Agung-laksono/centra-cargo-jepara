@@ -1246,6 +1246,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
             $waLink = "https://wa.me/{$phone}?text=".urlencode($pesan);
         }
 
+        try {
+            broadcast(new \App\Events\ManifestUpdated($manifest->id, 'created', 'Manifest baru dibuat dengan '.count($request->koli_ids).' koli'));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Broadcast ManifestUpdated error: '.$e->getMessage());
+        }
+
         return back()->with([
             'success' => 'Manifest berhasil dibuat!',
             'wa_link' => $waLink,
