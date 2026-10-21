@@ -2,7 +2,11 @@
 import { Head, Link } from '@inertiajs/vue3';
 import { ref, onMounted, onUnmounted } from 'vue';
 
-defineProps({ canLogin: { type: Boolean } });
+const props = defineProps({
+    canLogin: { type: Boolean },
+    canRegister: { type: Boolean },
+    apkDownloadUrl: { type: String, default: '/download-apk' },
+});
 
 const showWizard = ref(false);
 const appRole = ref(null);
@@ -290,16 +294,28 @@ onUnmounted(() => {
                 </div>
             </div>
             
-            <!-- Tombol Masuk Rahasia (Hanya Tampil Jika Terbuka via Kunci Rahasia / Sudah Login) -->
-            <div v-if="canLogin">
-                <Link v-if="$page.props.auth?.user" :href="route('dashboard')" class="pill-btn">
-                    <i class="ri-dashboard-fill"></i> Dashboard
-                </Link>
-                <Transition name="fade-slide">
-                    <Link v-if="!$page.props.auth?.user && showSecretLogin" :href="route('login')" class="pill-btn secret-pill">
-                        Masuk
+            <!-- Nav Actions: Download APK Android & Tombol Akses Masuk -->
+            <div class="nav-actions">
+                <a 
+                    :href="apkDownloadUrl || '/download-apk'" 
+                    class="apk-download-btn"
+                    title="Unduh Langsung Aplikasi Android (Khusus Driver & Petugas Gudang)"
+                    download="JeparaCargo-Driver.apk"
+                >
+                    <i class="ri-android-fill apk-android-icon"></i>
+                    <span class="apk-btn-text">Download APK</span>
+                </a>
+
+                <div v-if="canLogin" class="auth-buttons">
+                    <Link v-if="$page.props.auth?.user" :href="route('dashboard')" class="pill-btn">
+                        <i class="ri-dashboard-fill"></i> Dashboard
                     </Link>
-                </Transition>
+                    <Transition name="fade-slide">
+                        <Link v-if="!$page.props.auth?.user && showSecretLogin" :href="route('login')" class="pill-btn secret-pill">
+                            Masuk
+                        </Link>
+                    </Transition>
+                </div>
             </div>
         </nav>
 
@@ -523,6 +539,56 @@ onUnmounted(() => {
 .fade-slide-leave-to {
     opacity: 0;
     transform: translateY(-8px) scale(0.95);
+}
+
+.nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.apk-download-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 16px;
+    background: #f8fafc;
+    color: #0f172a;
+    border: 1px solid #e2e8f0;
+    border-radius: 98px;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    cursor: pointer;
+}
+.apk-download-btn:hover {
+    background: #ffffff;
+    color: #0284c7;
+    border-color: #cbd5e1;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+.apk-android-icon {
+    font-size: 17px;
+    color: #10b981;
+    line-height: 1;
+}
+.apk-btn-text {
+    letter-spacing: -0.1px;
+}
+
+@media (max-width: 640px) {
+    .nav {
+        padding: 0 14px;
+    }
+    .brand-subtitle {
+        display: none;
+    }
+    .apk-download-btn {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
 }
 
 /* ======== HERO ======== */

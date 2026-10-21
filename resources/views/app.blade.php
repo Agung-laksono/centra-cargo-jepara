@@ -96,11 +96,29 @@
             <i class="ri-wifi-off-line text-lg animate-pulse"></i> Anda Sedang Offline
         </div>
         <script>
+            // Cek preferensi Toggle Offline Cache (PWA)
+            const isOfflineCacheActive = localStorage.getItem('pwa_offline_cache_enabled') !== 'false';
+
             if ('serviceWorker' in navigator) {
                 window.addEventListener('load', () => {
-                    navigator.serviceWorker.register('/sw.js')
-                        .then((reg) => console.log('Service Worker berhasil didaftarkan!', reg))
-                        .catch((err) => console.log('Gagal mendaftar Service Worker', err));
+                    if (isOfflineCacheActive) {
+                        navigator.serviceWorker.register('/sw.js')
+                            .then((reg) => console.log('Service Worker PWA aktif (Offline-First)', reg))
+                            .catch((err) => console.log('Gagal mendaftar Service Worker', err));
+                    } else {
+                        // Jika dinonaktifkan: unregister service worker & bersihkan cache seketika
+                        navigator.serviceWorker.getRegistrations().then((registrations) => {
+                            for (let registration of registrations) {
+                                registration.unregister();
+                            }
+                        });
+                        if ('caches' in window) {
+                            caches.keys().then((keys) => {
+                                keys.forEach((key) => caches.delete(key));
+                            });
+                        }
+                        console.log('Mode Live Network aktif: Service Worker & Cache PWA dinonaktifkan.');
+                    }
                 });
             }
             

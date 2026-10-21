@@ -29,8 +29,22 @@ Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
         'canRegister' => Route::has('register'),
+        'apkDownloadUrl' => route('download.apk'),
     ]);
 })->name('welcome');
+
+// Direct Download APK Supir & Gudang
+Route::get('/download-apk', function () {
+    $path = public_path('downloads/jepara-cargo.apk');
+    if (file_exists($path)) {
+        return response()->download($path, 'JeparaCargo-Driver.apk', [
+            'Content-Type' => 'application/vnd.android.package-archive',
+            'Content-Disposition' => 'attachment; filename="JeparaCargo-Driver.apk"',
+        ]);
+    }
+
+    return redirect('https://drive.usercontent.google.com/download?id=1E3QiYXrB-xVQv4GkrHrjLK52012tOIyM&export=download&authuser=0');
+})->name('download.apk');
 
 // Public Resi Tracking Endpoint
 Route::get('/track-resi/{resi}', function ($resi) {
@@ -130,11 +144,48 @@ Route::get('/track-resi/{resi}', function ($resi) {
     ]);
 })->name('public.track.resi');
 
-// Magic Links untuk Supir (Tidak perlu login / auth)
+// Magic Links / Dashboard untuk Supir Pickup
 Route::get('/supir/pickup', function (Request $request) {
     $token = $request->query('token');
+
+    // Jika tanpa parameter token (misal supir login dari aplikasi mobile)
     if (! $token) {
-        abort(404);
+        if (auth()->check()) {
+            $user = auth()->user();
+            // Cari data driver berdasarkan nomor telepon atau kesamaan nama
+            $driver = Driver::where(function ($q) use ($user) {
+                if ($user->phone) {
+                    $q->where('phone_number', $user->phone);
+                }
+                $q->orWhere('name', 'like', "%{$user->name}%");
+            })->first();
+
+            if ($driver) {
+                $manifest = Manifest::where('driver_id', $driver->id)
+                    ->where('manifest_type', 'PICKUP')
+                    ->whereNotIn('status', ['SELESAI', 'CANCELLED'])
+                    ->latest()
+                    ->first();
+
+                if ($manifest && $manifest->magic_link_token) {
+                    return redirect('/supir/pickup?token='.$manifest->magic_link_token);
+                }
+            }
+
+            // Jika belum ada penugasan aktif, tampilkan antarmuka supir dalam status STANDBY
+            return Inertia::render('DriverPickup', [
+                'manifest' => [
+                    'id' => null,
+                    'status' => 'STANDBY',
+                    'driver_name' => $user->name,
+                    'expedition_name' => $user->expedition?->name,
+                    'token' => null,
+                ],
+                'pickups' => [],
+            ]);
+        }
+
+        abort(404, 'Tautan penjemputan tidak valid atau belum ada tugas aktif.');
     }
 
     $manifest = Manifest::with(['driver', 'expedition', 'kolis.shipment.sender'])
@@ -246,10 +297,47 @@ Route::post('/supir/pickup/complete', function (Request $request) {
     return back()->with('success', 'Barang berhasil diangkut ke mobil!');
 });
 
+// Magic Links / Dashboard untuk Supir Lintas
 Route::get('/supir/lintas', function (Request $request) {
     $token = $request->query('token');
+
+    // Jika tanpa parameter token (misal supir lintas login dari aplikasi mobile)
     if (! $token) {
-        abort(404);
+        if (auth()->check()) {
+            $user = auth()->user();
+            // Cari data driver berdasarkan nomor telepon atau kesamaan nama
+            $driver = Driver::where(function ($q) use ($user) {
+                if ($user->phone) {
+                    $q->where('phone_number', $user->phone);
+                }
+                $q->orWhere('name', 'like', "%{$user->name}%");
+            })->first();
+
+            if ($driver) {
+                $manifest = Manifest::where('driver_id', $driver->id)
+                    ->where('manifest_type', 'DELIVERY')
+                    ->whereNotIn('status', ['SELESAI', 'CANCELLED'])
+                    ->latest()
+                    ->first();
+
+                if ($manifest && $manifest->magic_link_token) {
+                    return redirect('/supir/lintas?token='.$manifest->magic_link_token);
+                }
+            }
+
+            // Jika belum ada surat jalan aktif, tampilkan antarmuka supir dalam status STANDBY
+            return Inertia::render('DriverLintas', [
+                'manifest' => [
+                    'id' => null,
+                    'status' => 'STANDBY',
+                    'driver_name' => $user->name,
+                    'token' => null,
+                ],
+                'deliveries' => [],
+            ]);
+        }
+
+        abort(404, 'Tautan surat jalan tidak valid atau belum ada manifest aktif.');
     }
 
     $manifest = Manifest::with(['driver', 'kolis.shipment.sender'])
@@ -320,6 +408,18 @@ Route::post('/api/driver/location', function (Request $request) {
 
 Route::get('/dashboard', function (Request $request) {
     $user = $request->user();
+
+    // Auto-redirect jika pengguna adalah Petugas Gudang atau Supir Lapangan
+    if ($user) {
+        if ($user->role === 'GUDANG') {
+            return redirect()->route('inbound');
+        } elseif ($user->role === 'DRIVER_PICKUP') {
+            return redirect('/supir/pickup');
+        } elseif ($user->role === 'DRIVER_LINTAS') {
+            return redirect('/supir/lintas');
+        }
+    }
+
     $isSuperAdmin = $user && $user->expedition_id === null;
 
     // JIKA SUPER ADMIN (PLATFORM AGREGATOR)

@@ -66,11 +66,25 @@ const isDragging = ref(false);
 import { usePage } from '@inertiajs/vue3';
 const page = usePage();
 const isSuperAdmin = computed(() => page.props.auth?.is_super_admin);
+const userRole = computed(() => page.props.auth?.user?.role);
+const isGudang = computed(() => userRole.value === 'GUDANG');
+const isDriverPickup = computed(() => userRole.value === 'DRIVER_PICKUP');
+const isDriverLintas = computed(() => userRole.value === 'DRIVER_LINTAS');
+const isDriver = computed(() => isDriverPickup.value || isDriverLintas.value);
 
 // Urutan halaman tab bawah dinamis sesuai role
 const pages = computed(() => {
     if (isSuperAdmin.value) {
         return ['dashboard', 'expeditions.index', 'settings.index', 'dokumentasi'];
+    }
+    if (isGudang.value) {
+        return ['inbound', 'manifest', 'dokumentasi'];
+    }
+    if (isDriverPickup.value) {
+        return ['pickup', 'lokasi-supir'];
+    }
+    if (isDriverLintas.value) {
+        return ['manifest', 'lokasi-supir'];
     }
     return ['dashboard', 'lokasi-supir', 'buat-resi', 'pickup', 'inbound', 'manifest', 'dokumentasi', 'settings.index'];
 });
@@ -374,8 +388,9 @@ const transitionProps = computed(() => {
             <!-- Menu Navigasi -->
             <nav class="flex-1 p-3 flex flex-col gap-1 overflow-y-auto overflow-x-hidden">
                 
-                <!-- Dashboard (Semua Role) -->
+                <!-- Dashboard (Hanya jika BUKAN supir / BUKAN gudang) -->
                 <Link 
+                    v-if="!isDriver && !isGudang"
                     :href="route('dashboard')" 
                     :title="isCollapsed ? 'Dashboard' : ''"
                     class="flex items-center gap-3 px-3 py-3 rounded-lg font-medium transition"
@@ -415,6 +430,83 @@ const transitionProps = computed(() => {
                     >
                         <i class="ri-book-3-line text-lg shrink-0"></i>
                         <span class="whitespace-nowrap transition-all duration-300" :class="isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100 w-auto'">Dokumentasi</span>
+                    </Link>
+                </template>
+
+                <!-- KHUSUS PETUGAS GUDANG (CHECKER) -->
+                <template v-else-if="isGudang">
+                    <Link 
+                        :href="route('inbound')" 
+                        :title="isCollapsed ? 'Inbound Gudang' : ''"
+                        class="flex items-center gap-3 px-3 py-3 rounded-lg font-medium transition"
+                        :class="route().current('inbound') ? 'bg-primary text-white shadow-md shadow-primary/20 pointer-events-none' : 'text-gray-600 hover:bg-primary/10 hover:text-primary'"
+                    >
+                        <i class="ri-qr-scan-2-line text-lg shrink-0"></i>
+                        <span class="whitespace-nowrap transition-all duration-300" :class="isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100 w-auto'">Inbound Gudang</span>
+                    </Link>
+
+                    <Link 
+                        :href="route('manifest')" 
+                        :title="isCollapsed ? 'Muat Manifest' : ''"
+                        class="flex items-center gap-3 px-3 py-3 rounded-lg font-medium transition"
+                        :class="route().current('manifest') ? 'bg-primary text-white shadow-md shadow-primary/20 pointer-events-none' : 'text-gray-600 hover:bg-primary/10 hover:text-primary'"
+                    >
+                        <i class="ri-truck-fill text-lg shrink-0"></i>
+                        <span class="whitespace-nowrap transition-all duration-300" :class="isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100 w-auto'">Muat Manifest Truk</span>
+                    </Link>
+
+                    <Link 
+                        :href="route('dokumentasi')" 
+                        :title="isCollapsed ? 'Dokumentasi' : ''"
+                        class="flex items-center gap-3 px-3 py-3 rounded-lg font-medium transition"
+                        :class="route().current('dokumentasi') ? 'bg-primary text-white shadow-md shadow-primary/20 pointer-events-none' : 'text-gray-600 hover:bg-primary/10 hover:text-primary'"
+                    >
+                        <i class="ri-book-3-line text-lg shrink-0"></i>
+                        <span class="whitespace-nowrap transition-all duration-300" :class="isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100 w-auto'">Panduan & SOP</span>
+                    </Link>
+                </template>
+
+                <!-- KHUSUS SUPIR PICKUP -->
+                <template v-else-if="isDriverPickup">
+                    <a 
+                        href="/supir/pickup" 
+                        :title="isCollapsed ? 'Tugas Jemput' : ''"
+                        class="flex items-center gap-3 px-3 py-3 rounded-lg font-medium transition text-gray-600 hover:bg-primary/10 hover:text-primary"
+                    >
+                        <i class="ri-truck-line text-lg shrink-0 inline-block -scale-x-100"></i>
+                        <span class="whitespace-nowrap transition-all duration-300" :class="isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100 w-auto'">Tugas Penjemputan</span>
+                    </a>
+
+                    <Link 
+                        :href="route('lokasi-supir')" 
+                        :title="isCollapsed ? 'Peta Lokasi' : ''"
+                        class="flex items-center gap-3 px-3 py-3 rounded-lg font-medium transition"
+                        :class="route().current('lokasi-supir') ? 'bg-primary text-white shadow-md shadow-primary/20 pointer-events-none' : 'text-gray-600 hover:bg-primary/10 hover:text-primary'"
+                    >
+                        <i class="ri-map-pin-user-line text-lg shrink-0"></i>
+                        <span class="whitespace-nowrap transition-all duration-300" :class="isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100 w-auto'">Peta GPS Armada</span>
+                    </Link>
+                </template>
+
+                <!-- KHUSUS SUPIR LINTAS -->
+                <template v-else-if="isDriverLintas">
+                    <a 
+                        href="/supir/lintas" 
+                        :title="isCollapsed ? 'Surat Jalan' : ''"
+                        class="flex items-center gap-3 px-3 py-3 rounded-lg font-medium transition text-gray-600 hover:bg-primary/10 hover:text-primary"
+                    >
+                        <i class="ri-route-line text-lg shrink-0"></i>
+                        <span class="whitespace-nowrap transition-all duration-300" :class="isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100 w-auto'">Surat Jalan Lintas</span>
+                    </a>
+
+                    <Link 
+                        :href="route('lokasi-supir')" 
+                        :title="isCollapsed ? 'Peta Lokasi' : ''"
+                        class="flex items-center gap-3 px-3 py-3 rounded-lg font-medium transition"
+                        :class="route().current('lokasi-supir') ? 'bg-primary text-white shadow-md shadow-primary/20 pointer-events-none' : 'text-gray-600 hover:bg-primary/10 hover:text-primary'"
+                    >
+                        <i class="ri-map-pin-user-line text-lg shrink-0"></i>
+                        <span class="whitespace-nowrap transition-all duration-300" :class="isCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100 w-auto'">Peta GPS Armada</span>
                     </Link>
                 </template>
 
@@ -670,7 +762,107 @@ const transitionProps = computed(() => {
                     </Link>
                 </template>
 
-                <!-- KHUSUS OPERASIONAL EKSPEDISI DI MOBILE -->
+                <!-- KHUSUS PETUGAS GUDANG DI MOBILE -->
+                <template v-else-if="isGudang">
+                    <Link 
+                        :href="route('inbound')" 
+                        class="flex flex-col items-center justify-center w-full h-full transition-all duration-200 relative py-1"
+                        :class="route().current('inbound') ? 'text-primary font-bold' : 'text-gray-400 hover:text-gray-600'"
+                    >
+                        <span 
+                            v-if="route().current('inbound')"
+                            class="absolute top-0 left-1/2 -translate-x-1/2 w-7 h-1 bg-primary rounded-b-full shadow-[0_2px_4px_rgba(37,99,235,0.4)]"
+                        ></span>
+                        <i class="ri-qr-scan-2-line text-[22px] transition-transform duration-200" :class="route().current('inbound') ? 'scale-110 drop-shadow-sm' : ''"></i>
+                        <span v-if="route().current('inbound')" class="text-[10px] tracking-tight leading-none mt-1 animate-fadeIn">Inbound</span>
+                    </Link>
+
+                    <Link 
+                        :href="route('manifest')" 
+                        class="flex flex-col items-center justify-center w-full h-full transition-all duration-200 relative py-1"
+                        :class="route().current('manifest') ? 'text-primary font-bold' : 'text-gray-400 hover:text-gray-600'"
+                    >
+                        <span 
+                            v-if="route().current('manifest')"
+                            class="absolute top-0 left-1/2 -translate-x-1/2 w-7 h-1 bg-primary rounded-b-full shadow-[0_2px_4px_rgba(37,99,235,0.4)]"
+                        ></span>
+                        <i class="ri-truck-fill text-[22px] transition-transform duration-200" :class="route().current('manifest') ? 'scale-110 drop-shadow-sm' : ''"></i>
+                        <span v-if="route().current('manifest')" class="text-[10px] tracking-tight leading-none mt-1 animate-fadeIn">Manifest</span>
+                    </Link>
+
+                    <button 
+                        @click="showMobileMenu = true"
+                        class="flex flex-col items-center justify-center w-full h-full transition-all duration-200 relative py-1"
+                        :class="showMobileMenu || route().current('dokumentasi') ? 'text-primary font-bold' : 'text-gray-400 hover:text-gray-600'"
+                    >
+                        <span 
+                            v-if="showMobileMenu || route().current('dokumentasi')"
+                            class="absolute top-0 left-1/2 -translate-x-1/2 w-7 h-1 bg-primary rounded-b-full shadow-[0_2px_4px_rgba(37,99,235,0.4)]"
+                        ></span>
+                        <i class="ri-menu-4-line text-[22px] transition-transform duration-200" :class="showMobileMenu || route().current('dokumentasi') ? 'scale-110 drop-shadow-sm' : ''"></i>
+                        <span v-if="showMobileMenu || route().current('dokumentasi')" class="text-[10px] tracking-tight leading-none mt-1 animate-fadeIn">Lainnya</span>
+                    </button>
+                </template>
+
+                <!-- KHUSUS SUPIR PICKUP DI MOBILE -->
+                <template v-else-if="isDriverPickup">
+                    <a 
+                        href="/supir/pickup" 
+                        class="flex flex-col items-center justify-center w-full h-full transition-all duration-200 relative py-1 text-gray-500 hover:text-primary"
+                    >
+                        <i class="ri-truck-line text-[22px] inline-block -scale-x-100 transition-transform duration-200"></i>
+                        <span class="text-[10px] tracking-tight leading-none mt-1">Jemput</span>
+                    </a>
+
+                    <Link 
+                        :href="route('lokasi-supir')" 
+                        class="flex flex-col items-center justify-center w-full h-full transition-all duration-200 relative py-1"
+                        :class="route().current('lokasi-supir') ? 'text-primary font-bold' : 'text-gray-400 hover:text-gray-600'"
+                    >
+                        <i class="ri-map-pin-user-line text-[22px] transition-transform duration-200" :class="route().current('lokasi-supir') ? 'scale-110 drop-shadow-sm' : ''"></i>
+                        <span class="text-[10px] tracking-tight leading-none mt-1">Peta GPS</span>
+                    </Link>
+
+                    <button 
+                        @click="showMobileMenu = true"
+                        class="flex flex-col items-center justify-center w-full h-full transition-all duration-200 relative py-1"
+                        :class="showMobileMenu ? 'text-primary font-bold' : 'text-gray-400 hover:text-gray-600'"
+                    >
+                        <i class="ri-menu-4-line text-[22px] transition-transform duration-200"></i>
+                        <span class="text-[10px] tracking-tight leading-none mt-1">Akun</span>
+                    </button>
+                </template>
+
+                <!-- KHUSUS SUPIR LINTAS DI MOBILE -->
+                <template v-else-if="isDriverLintas">
+                    <a 
+                        href="/supir/lintas" 
+                        class="flex flex-col items-center justify-center w-full h-full transition-all duration-200 relative py-1 text-gray-500 hover:text-primary"
+                    >
+                        <i class="ri-route-line text-[22px] transition-transform duration-200"></i>
+                        <span class="text-[10px] tracking-tight leading-none mt-1">Surat Jalan</span>
+                    </a>
+
+                    <Link 
+                        :href="route('lokasi-supir')" 
+                        class="flex flex-col items-center justify-center w-full h-full transition-all duration-200 relative py-1"
+                        :class="route().current('lokasi-supir') ? 'text-primary font-bold' : 'text-gray-400 hover:text-gray-600'"
+                    >
+                        <i class="ri-map-pin-user-line text-[22px] transition-transform duration-200" :class="route().current('lokasi-supir') ? 'scale-110 drop-shadow-sm' : ''"></i>
+                        <span class="text-[10px] tracking-tight leading-none mt-1">Peta GPS</span>
+                    </Link>
+
+                    <button 
+                        @click="showMobileMenu = true"
+                        class="flex flex-col items-center justify-center w-full h-full transition-all duration-200 relative py-1"
+                        :class="showMobileMenu ? 'text-primary font-bold' : 'text-gray-400 hover:text-gray-600'"
+                    >
+                        <i class="ri-menu-4-line text-[22px] transition-transform duration-200"></i>
+                        <span class="text-[10px] tracking-tight leading-none mt-1">Akun</span>
+                    </button>
+                </template>
+
+                <!-- KHUSUS OPERASIONAL EKSPEDISI DI MOBILE (Admin Cabang / Kasir) -->
                 <template v-else>
                     <Link 
                         :href="route('lokasi-supir')" 

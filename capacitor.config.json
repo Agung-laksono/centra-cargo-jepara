@@ -3,7 +3,7 @@
   "appName": "JeparaCargo",
   "webDir": "public",
   "server": {
-    "url": "https://defense-rope-coat.ngrok-free.dev",
+    "url": "https://cargo.juraganfurniture.com",
     "cleartext": true
   },
   "plugins": {

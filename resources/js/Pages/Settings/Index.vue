@@ -359,6 +359,64 @@ const runManualUpdate = async () => {
         updateLogs.value.push(`[ERROR] ${updateError.value}`);
     }
 };
+
+// =======================
+// OFFLINE CACHE MANAGEMENT (PWA)
+// =======================
+const isOfflineCacheEnabled = ref(
+    typeof window !== 'undefined' ? localStorage.getItem('pwa_offline_cache_enabled') !== 'false' : true
+);
+const isPurgingCache = ref(false);
+const cacheToastMessage = ref('');
+
+const toggleOfflineCache = async () => {
+    isOfflineCacheEnabled.value = !isOfflineCacheEnabled.value;
+    localStorage.setItem('pwa_offline_cache_enabled', isOfflineCacheEnabled.value ? 'true' : 'false');
+    
+    if (!isOfflineCacheEnabled.value) {
+        if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (let reg of registrations) {
+                await reg.unregister();
+            }
+        }
+        if ('caches' in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+        }
+        cacheToastMessage.value = 'Mode Live Network diaktifkan! Cache browser dinonaktifkan. Memuat ulang...';
+    } else {
+        cacheToastMessage.value = 'Mode Offline-First diaktifkan! Aplikasi akan menyimpan cache untuk supir & gudang. Memuat ulang...';
+    }
+
+    setTimeout(() => {
+        window.location.reload();
+    }, 1000);
+};
+
+const purgeAllCache = async () => {
+    isPurgingCache.value = true;
+    cacheToastMessage.value = 'Sedang membersihkan seluruh cache tersimpan...';
+    try {
+        if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (let reg of registrations) {
+                await reg.unregister();
+            }
+        }
+        if ('caches' in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+        }
+        cacheToastMessage.value = 'Seluruh cache berhasil dibersihkan! Halaman akan dimuat ulang...';
+        setTimeout(() => {
+            window.location.reload();
+        }, 800);
+    } catch (e) {
+        isPurgingCache.value = false;
+        cacheToastMessage.value = 'Gagal membersihkan cache: ' + (e.message || e);
+    }
+};
 </script>
 
 <template>
@@ -800,6 +858,72 @@ const runManualUpdate = async () => {
                                     SHA Aktif: <strong>{{ props.github?.current_sha ? props.github.current_sha.substring(0, 7) : 'Lokal / Dev' }}</strong>
                                 </span>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Kartu Manajemen Cache & Mode Offline (PWA) -->
+                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 md:p-6 space-y-4">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl transition-colors shrink-0"
+                                     :class="isOfflineCacheEnabled ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'">
+                                    <i :class="isOfflineCacheEnabled ? 'ri-wifi-off-line' : 'ri-wifi-line'"></i>
+                                </div>
+                                <div>
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <h4 class="font-bold text-dark text-base">Mode Offline & Cache Browser (PWA)</h4>
+                                        <span class="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                                              :class="isOfflineCacheEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'">
+                                            {{ isOfflineCacheEnabled ? 'Offline-First Aktif' : 'Live Network (Tanpa Cache)' }}
+                                        </span>
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-0.5">
+                                        {{ isOfflineCacheEnabled 
+                                            ? 'Aplikasi disimpan di memori perangkat agar supir & checker tetap bisa bekerja saat sinyal hilang.' 
+                                            : 'Semua halaman & aset selalu diambil langsung dari server terbaru (cocok untuk admin kantor & saat develop).' }}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Pesan Notifikasi jika ada aksi -->
+                        <div v-if="cacheToastMessage" class="p-3 bg-blue-50 text-blue-700 rounded-xl text-xs flex items-center gap-2 font-medium">
+                            <i class="ri-information-line text-base shrink-0"></i>
+                            <span>{{ cacheToastMessage }}</span>
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
+                            <!-- Switch Toggle -->
+                            <div class="flex items-center gap-3">
+                                <button 
+                                    type="button" 
+                                    @click="toggleOfflineCache" 
+                                    class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+                                    :class="isOfflineCacheEnabled ? 'bg-emerald-600' : 'bg-gray-300'"
+                                    role="switch" 
+                                    :aria-checked="isOfflineCacheEnabled"
+                                >
+                                    <span 
+                                        aria-hidden="true" 
+                                        class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                                        :class="isOfflineCacheEnabled ? 'translate-x-5' : 'translate-x-0'"
+                                    ></span>
+                                </button>
+                                <span class="text-xs font-bold text-gray-700 cursor-pointer" @click="toggleOfflineCache">
+                                    {{ isOfflineCacheEnabled ? 'Nonaktifkan Cache (Ganti ke Live Network)' : 'Aktifkan Cache Offline (Mode Supir/Gudang)' }}
+                                </span>
+                            </div>
+
+                            <!-- Tombol Bersihkan Cache -->
+                            <button
+                                type="button"
+                                @click="purgeAllCache"
+                                :disabled="isPurgingCache"
+                                class="px-4 py-2 rounded-xl text-xs font-bold text-gray-700 bg-gray-100 hover:bg-red-50 hover:text-red-700 transition flex items-center justify-center gap-1.5 border border-gray-200/60 shadow-sm"
+                            >
+                                <i :class="isPurgingCache ? 'ri-loader-4-line animate-spin text-red-600' : 'ri-delete-bin-line text-gray-500'"></i>
+                                {{ isPurgingCache ? 'Membersihkan...' : 'Bersihkan Cache Sekarang' }}
+                            </button>
                         </div>
                     </div>
 
