@@ -4,6 +4,8 @@ import { router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import { useBiometricAuth } from '@/Composables/useBiometricAuth';
 import BarcodeScanner from '@/Components/BarcodeScanner.vue';
+import { BarcodeScanner as NativeBarcodeScanner, BarcodeFormat } from '@capacitor-mlkit/barcode-scanning';
+import { Capacitor } from '@capacitor/core';
 
 const props = defineProps({
     show: {
@@ -131,6 +133,52 @@ const handleConnectHandshake = async (tokenCode) => {
     } finally {
         isSubmittingHandshake.value = false;
     }
+};
+
+const openHandshakeScanner = async () => {
+    handshakeMsg.value = null;
+
+    // Khusus Android / iOS Native Capacitor: Gunakan QR Scanner Native langsung tanpa buka web modal
+    if (Capacitor.isNativePlatform()) {
+        try {
+            const perm = await NativeBarcodeScanner.checkPermissions();
+            if (perm.camera !== 'granted') {
+                const req = await NativeBarcodeScanner.requestPermissions();
+                if (req.camera !== 'granted' && req.camera !== 'limited') {
+                    alert('Izin kamera ditolak. Harap izinkan akses kamera di pengaturan HP.');
+                    return;
+                }
+            }
+
+            try {
+                const { available } = await NativeBarcodeScanner.isGoogleBarcodeScannerModuleAvailable();
+                if (!available) {
+                    await NativeBarcodeScanner.installGoogleBarcodeScannerModule();
+                }
+            } catch (e) {}
+
+            const { barcodes } = await NativeBarcodeScanner.scan({
+                formats: [BarcodeFormat.QrCode],
+            });
+
+            if (barcodes && barcodes.length > 0) {
+                const scannedCode = barcodes[0].displayValue || barcodes[0].rawValue;
+                if (scannedCode) {
+                    onHandshakeQrScanned(scannedCode);
+                }
+            }
+            return;
+        } catch (err) {
+            const errMsg = (err?.message || '').toLowerCase();
+            if (errMsg.includes('cancel') || errMsg.includes('canceled') || errMsg.includes('cancelled') || errMsg.includes('dismissed') || errMsg.includes('abort')) {
+                return;
+            }
+            console.warn('Native QR scanner error, fallback ke web scanner:', err);
+        }
+    }
+
+    // Fallback jika dibuka di desktop browser
+    isHandshakeScannerOpen.value = true;
 };
 
 const onHandshakeQrScanned = (scannedText) => {
@@ -425,7 +473,7 @@ const handleLogout = () => {
                             <div class="pt-1 flex gap-2">
                                 <button
                                     type="button"
-                                    @click="isHandshakeScannerOpen = true"
+                                    @click="openHandshakeScanner"
                                     class="flex-1 py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-[0.98] shadow-sm"
                                 >
                                     <i class="ri-qr-scan-2-line text-sm text-primary"></i>
@@ -549,6 +597,7 @@ const handleLogout = () => {
                         :show-close="false"
                         initial-mode="resi"
                         :allow-mode-switch="false"
+                        :clean-view="true"
                         @scan="onHandshakeQrScanned"
                         @close="isHandshakeScannerOpen = false"
                     />

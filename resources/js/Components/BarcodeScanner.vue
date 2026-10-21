@@ -170,6 +170,78 @@ const startNativeScanner = async () => {
     }
 };
 
+// Algoritma pendeteksi Kamera Belakang Utama (Main 1x Camera)
+const findMainBackCamera = (devices) => {
+    if (!devices || devices.length === 0) return null;
+
+    // Filter kamera belakang (singkirkan front/user/selfie/depan)
+    const backCameras = devices.filter(d => {
+        const label = (d.label || '').toLowerCase();
+        return !label.includes('front') && 
+               !label.includes('user') && 
+               !label.includes('selfie') && 
+               !label.includes('depan');
+    });
+
+    if (backCameras.length === 0) return devices[0];
+    if (backCameras.length === 1) return backCameras[0];
+
+    // Scoring untuk mencari kamera utama (Main 1x Wide)
+    const scored = backCameras.map(d => {
+        const label = (d.label || '').toLowerCase();
+        let score = 10;
+
+        // Penalti keras untuk lensa yang BUKAN kamera utama (ultra-wide, macro, depth, telephoto)
+        if (label.includes('ultra') || label.includes('wide-angle') || label.includes('ultrawide') || label.includes('0.5x') || label.includes('0.6x')) {
+            score -= 50;
+        }
+        if (label.includes('macro') || label.includes('makro')) {
+            score -= 60;
+        }
+        if (label.includes('depth') || label.includes('tof') || label.includes('tele') || label.includes('telephoto') || label.includes('periscope')) {
+            score -= 40;
+        }
+
+        // Skor positif untuk kamera utama
+        if (label.includes('main') || label.includes('utama') || label.includes('primary')) {
+            score += 40;
+        }
+        // Di Android Camera2 API, '0, facing back' atau 'camera 0' atau 'back 0' adalah sensor utama 1x
+        if (label.includes('0, facing back') || label.includes('camera 0') || label.includes('back 0') || label.includes('camera2 0') || label.includes('id 0')) {
+            score += 30;
+        }
+        if (label.includes('wide') && !label.includes('ultra')) {
+            score += 15;
+        }
+        if (label.includes('1x') || label.includes('standard')) {
+            score += 25;
+        }
+
+        return { device: d, score };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored[0].device;
+};
+
+const formatCameraLabel = (label, idx) => {
+    if (!label) return `Lensa Kamera ${idx + 1}`;
+    const lower = label.toLowerCase();
+    if (lower.includes('front') || lower.includes('user') || lower.includes('depan')) {
+        return `Kamera Depan (${label})`;
+    }
+    if (lower.includes('ultra') || lower.includes('0.5x') || lower.includes('0.6x')) {
+        return `Lensa Ultra-Wide (${label})`;
+    }
+    if (lower.includes('macro') || lower.includes('makro')) {
+        return `Lensa Macro (${label})`;
+    }
+    if (lower.includes('0, facing back') || lower.includes('main') || lower.includes('primary') || lower.includes('camera 0') || lower.includes('back 0')) {
+        return `★ Kamera Utama 1x (${label})`;
+    }
+    return `Kamera Belakang (${label})`;
+};
+
 // ==========================================
 // 2. WEB BROWSER / PWA / ANDROID WEBVIEW (HTML5 QrCode Inline Box)
 // ==========================================
@@ -189,6 +261,15 @@ const startWebScanner = async () => {
                 } else {
                     saveCameraId('');
                     selectedCameraId.value = '';
+                }
+            }
+            
+            // Jika belum ada kamera tersimpan, otomatis pilih KAMERA UTAMA (1x Back Camera)
+            if (!selectedCameraId.value) {
+                const mainCam = findMainBackCamera(devices);
+                if (mainCam && mainCam.id) {
+                    selectedCameraId.value = mainCam.id;
+                    console.log("📷 [BarcodeScanner] Auto-selected Main Camera:", mainCam.label || mainCam.id);
                 }
             }
         }
@@ -250,12 +331,12 @@ const initiateWebScan = () => {
     });
     
     let cameraConfig;
-    if (!selectedCameraId.value) {
-        cameraConfig = { facingMode: "environment" };
-    } else if (selectedCameraId.value === 'user') {
+    if (selectedCameraId.value === 'user') {
         cameraConfig = { facingMode: "user" };
-    } else {
+    } else if (selectedCameraId.value) {
         cameraConfig = selectedCameraId.value;
+    } else {
+        cameraConfig = { facingMode: "environment" };
     }
         
     const qrbox = (viewfinderWidth, viewfinderHeight) => {
@@ -393,18 +474,18 @@ onUnmounted(async () => {
                     class="absolute inset-0 w-full h-full opacity-0 cursor-pointer text-base"
                     title="Pilih Kamera"
                 >
-                    <option value="" class="bg-gray-900 text-white">Kamera Belakang (Default)</option>
+                    <option value="" class="bg-gray-900 text-white">★ Kamera Utama (Belakang)</option>
                     <option value="user" class="bg-gray-900 text-white">Kamera Depan</option>
                     <option v-for="(camera, idx) in availableCameras" :key="camera.id" :value="camera.id" class="bg-gray-900 text-white">
-                        {{ camera.label || `Lensa Kamera ${idx + 1}` }}
+                        {{ formatCameraLabel(camera.label, idx) }}
                     </option>
                 </select>
             </div>
         </div>
 
-        <!-- Target Mode Selector / Locked Mode Badge (Hanya jika BUKAN cleanView) -->
-        <div v-if="!cleanView" class="absolute top-2 left-12 z-40 flex items-center gap-1 pointer-events-none">
-            <div v-if="allowModeSwitch" class="pointer-events-auto flex items-center bg-black/75 backdrop-blur-md p-0.5 rounded-xl border border-white/20 shadow-lg text-[10px] font-bold">
+        <!-- Target Mode Selector (Hanya jika BUKAN cleanView DAN allowModeSwitch diizinkan) -->
+        <div v-if="!cleanView && allowModeSwitch" class="absolute top-2 left-12 z-40 flex items-center gap-1 pointer-events-none">
+            <div class="pointer-events-auto flex items-center bg-black/75 backdrop-blur-md p-0.5 rounded-xl border border-white/20 shadow-lg text-[10px] font-bold">
                 <button 
                     type="button" 
                     @click="switchMode('koli')"
@@ -437,10 +518,6 @@ onUnmounted(async () => {
                 >
                     <span>Semua</span>
                 </button>
-            </div>
-            <div v-else class="pointer-events-auto bg-black/75 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/20 text-[10px] font-bold text-white flex items-center gap-1.5 shadow">
-                <i class="ri-barcode-line text-primary text-xs"></i>
-                <span>Mode Terkunci: Barcode Koli (1D)</span>
             </div>
         </div>
 

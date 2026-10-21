@@ -9,6 +9,8 @@ import { useBiometricAuth } from '@/Composables/useBiometricAuth';
 import { Fullscreen } from '@boengli/capacitor-fullscreen';
 import { StatusBar } from '@capacitor/status-bar';
 import DriverProfileModal from '@/Components/DriverProfileModal.vue';
+import { BarcodeScanner as NativeBarcodeScanner, BarcodeFormat } from '@capacitor-mlkit/barcode-scanning';
+import { Capacitor } from '@capacitor/core';
 
 const props = defineProps({
     manifest: Object,
@@ -75,8 +77,49 @@ const isClaimingManifest = ref(false);
 const claimManifestError = ref('');
 const claimSuccessMessage = ref('');
 
-const openManifestScanner = () => {
+const openManifestScanner = async () => {
     claimManifestError.value = '';
+
+    // Khusus Android / iOS Native Capacitor: Gunakan QR Scanner Native langsung tanpa buka web modal
+    if (Capacitor.isNativePlatform()) {
+        try {
+            const perm = await NativeBarcodeScanner.checkPermissions();
+            if (perm.camera !== 'granted') {
+                const req = await NativeBarcodeScanner.requestPermissions();
+                if (req.camera !== 'granted' && req.camera !== 'limited') {
+                    alert('Izin kamera ditolak. Harap izinkan akses kamera di pengaturan HP.');
+                    return;
+                }
+            }
+
+            try {
+                const { available } = await NativeBarcodeScanner.isGoogleBarcodeScannerModuleAvailable();
+                if (!available) {
+                    await NativeBarcodeScanner.installGoogleBarcodeScannerModule();
+                }
+            } catch (e) {}
+
+            const { barcodes } = await NativeBarcodeScanner.scan({
+                formats: [BarcodeFormat.QrCode],
+            });
+
+            if (barcodes && barcodes.length > 0) {
+                const scannedCode = barcodes[0].displayValue || barcodes[0].rawValue;
+                if (scannedCode) {
+                    onManifestQrScanned(scannedCode);
+                }
+            }
+            return;
+        } catch (err) {
+            const errMsg = (err?.message || '').toLowerCase();
+            if (errMsg.includes('cancel') || errMsg.includes('canceled') || errMsg.includes('cancelled') || errMsg.includes('dismissed') || errMsg.includes('abort')) {
+                return;
+            }
+            console.warn('Native QR scanner error, fallback ke web scanner:', err);
+        }
+    }
+
+    // Fallback jika dibuka di browser web desktop
     isManifestScannerOpen.value = true;
 };
 
@@ -851,6 +894,7 @@ const selesaikanJemput = (auto = false, force = false) => {
                                 :showClose="false"
                                 initialMode="koli"
                                 :allowModeSwitch="false"
+                                :clean-view="true"
                                 @scan="handleScan" 
                                 @close="isCameraOpen = false" 
                             />
@@ -1089,7 +1133,9 @@ const selesaikanJemput = (auto = false, force = false) => {
             </div>
             <div class="flex-1 relative bg-black flex flex-col justify-center">
                 <BarcodeScanner
-                    initial-mode="all"
+                    initial-mode="resi"
+                    :allow-mode-switch="false"
+                    :clean-view="true"
                     :show-close="false"
                     @scan="onManifestQrScanned"
                     @close="isManifestScannerOpen = false"
