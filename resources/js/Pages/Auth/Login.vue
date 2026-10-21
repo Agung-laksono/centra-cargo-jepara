@@ -1,8 +1,9 @@
 <script setup>
 import InputError from '@/Components/InputError.vue';
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { Capacitor } from '@capacitor/core';
+import { useBiometricAuth } from '@/Composables/useBiometricAuth';
 
 const props = defineProps({
     canResetPassword: { type: Boolean },
@@ -23,6 +24,36 @@ const form = useForm({
 
 const showPassword = ref(false);
 const showQuickLogin = ref(false);
+
+const {
+    isSupported,
+    isAuthenticating,
+    registeredUser,
+    errorMessage: biometricError,
+    checkSupport,
+    loadRegisteredDevice,
+    loginWithBiometric,
+    removeBiometric,
+} = useBiometricAuth();
+
+onMounted(async () => {
+    await checkSupport();
+    await loadRegisteredDevice();
+});
+
+const handleBiometricLogin = async () => {
+    try {
+        await loginWithBiometric();
+    } catch (e) {
+        console.warn('Biometric login error:', e);
+    }
+};
+
+const handleRemoveBiometric = async () => {
+    if (confirm('Lepas kunci layar/sidik jari akun ini dari perangkat? Anda tetap bisa masuk menggunakan kata sandi.')) {
+        await removeBiometric();
+    }
+};
 
 const submit = () => {
     form.post(route('login'), {
@@ -98,6 +129,49 @@ const quickLogin = (email) => {
 
                 <div v-if="status" class="status-msg">
                     <i class="ri-check-line"></i> {{ status }}
+                </div>
+
+                <!-- KARTU MASUK CEPAT KUNCI LAYAR / SIDIK JARI -->
+                <div v-if="registeredUser" class="biometric-card">
+                    <div class="biometric-avatar">
+                        <i class="ri-fingerprint-line"></i>
+                    </div>
+                    <div class="biometric-info">
+                        <span class="biometric-badge"><i class="ri-shield-check-fill"></i> Kunci Layar HP Aktif</span>
+                        <h4 class="biometric-user-name">{{ registeredUser.name }}</h4>
+                        <p class="biometric-user-role">{{ registeredUser.role || 'Staf Lapangan' }} • {{ registeredUser.email }}</p>
+                    </div>
+                    <button
+                        type="button"
+                        class="btn-biometric-unlock"
+                        :disabled="isAuthenticating"
+                        @click="handleBiometricLogin"
+                    >
+                        <i v-if="isAuthenticating" class="ri-loader-4-line spin"></i>
+                        <template v-else>
+                            <i class="ri-lock-unlock-line"></i>
+                            <span>Buka</span>
+                        </template>
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-biometric-dismiss"
+                        @click="handleRemoveBiometric"
+                        title="Lepas Kunci Layar di HP Ini"
+                    >
+                        <i class="ri-close-line"></i>
+                    </button>
+                </div>
+
+                <div v-if="biometricError" class="biometric-error-alert">
+                    <i class="ri-error-warning-fill"></i>
+                    <span>{{ biometricError }}</span>
+                </div>
+
+                <div v-if="registeredUser" class="biometric-divider">
+                    <div class="divider-line"></div>
+                    <span>atau gunakan kata sandi</span>
+                    <div class="divider-line"></div>
                 </div>
 
                 <form @submit.prevent="submit" class="login-form">
@@ -469,6 +543,143 @@ const quickLogin = (email) => {
     font-size: 14px;
     font-weight: 500;
     margin-bottom: 20px;
+}
+
+/* Biometric Quick Login Card */
+.biometric-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: linear-gradient(135deg, rgba(var(--color-primary), 0.08) 0%, rgba(var(--color-primary), 0.02) 100%);
+    border: 1.5px solid rgba(var(--color-primary), 0.25);
+    border-radius: 16px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    position: relative;
+    box-shadow: 0 4px 14px rgba(var(--color-primary), 0.06);
+    transition: all 0.2s ease;
+}
+.biometric-card:hover {
+    border-color: rgba(var(--color-primary), 0.45);
+    box-shadow: 0 6px 18px rgba(var(--color-primary), 0.1);
+}
+.biometric-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: rgb(var(--color-primary));
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    box-shadow: 0 4px 10px rgba(var(--color-primary), 0.35);
+    flex-shrink: 0;
+}
+.biometric-info {
+    flex: 1;
+    min-width: 0;
+}
+.biometric-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    color: rgb(var(--color-primary));
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 2px;
+}
+.biometric-user-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #1d1d1f;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.biometric-user-role {
+    font-size: 11px;
+    color: #6b7280;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+}
+.btn-biometric-unlock {
+    padding: 8px 14px;
+    background: rgb(var(--color-primary));
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    box-shadow: 0 3px 8px rgba(var(--color-primary), 0.3);
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+.btn-biometric-unlock:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 5px 12px rgba(var(--color-primary), 0.4);
+}
+.btn-biometric-unlock:active {
+    transform: scale(0.96);
+}
+.btn-biometric-dismiss {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.06);
+    border: none;
+    color: #9ca3af;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    cursor: pointer;
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    transition: background 0.15s, color 0.15s;
+}
+.btn-biometric-dismiss:hover {
+    background: #fee2e2;
+    color: #ef4444;
+}
+.biometric-error-alert {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 10px;
+    color: #b91c1c;
+    font-size: 12px;
+    font-weight: 500;
+    margin-bottom: 14px;
+}
+.biometric-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.biometric-divider .divider-line {
+    flex: 1;
+    height: 1px;
+    background: #e5e7eb;
+}
+.biometric-divider span {
+    font-size: 11px;
+    color: #9ca3af;
+    font-weight: 500;
 }
 
 /* Form fields */

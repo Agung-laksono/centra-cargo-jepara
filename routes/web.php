@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ExpeditionController;
+use App\Http\Controllers\BiometricAuthController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SenderController;
 use App\Http\Controllers\SettingController;
@@ -48,6 +49,14 @@ Route::get('/app', function (Request $request) {
 
 Route::get('/supir', function () {
     return redirect()->route('mobile.gateway');
+});
+
+// Biometric & Screen Lock Authentication
+Route::post('/biometric/login', [BiometricAuthController::class, 'login'])->name('biometric.login');
+Route::middleware('auth')->group(function () {
+    Route::post('/biometric/register', [BiometricAuthController::class, 'register'])->name('biometric.register');
+    Route::get('/biometric/status', [BiometricAuthController::class, 'status'])->name('biometric.status');
+    Route::post('/biometric/disable', [BiometricAuthController::class, 'disable'])->name('biometric.disable');
 });
 
 // Direct Download APK Supir & Gudang

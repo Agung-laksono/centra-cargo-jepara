@@ -6,7 +6,8 @@ let globalWasSwiped = false; // Flag untuk deteksi navigasi via swipe
 </script>
 <script setup>
 import { ref, onMounted, onUnmounted, onBeforeUnmount, onUpdated, provide, computed } from 'vue';
-import { Link, Head, router } from '@inertiajs/vue3';
+import { Link, Head, router, usePage } from '@inertiajs/vue3';
+import { useBiometricAuth } from '@/Composables/useBiometricAuth';
 
 // Mendefinisikan properti (props) yang bisa diterima oleh Layout ini
 // Misalnya: judul halaman yang akan tampil di Header
@@ -25,10 +26,58 @@ const props = defineProps({
     }
 });
 
+const page = usePage();
+
 // State untuk mengatur apakah sidebar mengecil (collapsed) atau melebar
 // Cek memori browser (localStorage) secara sinkron agar tidak ada jumping saat render pertama
 const isCollapsed = ref(typeof localStorage !== 'undefined' ? localStorage.getItem('sidebarCollapsed') === 'true' : false);
 const showMobileMenu = ref(false);
+
+// Biometric & Kunci Layar HP
+const {
+    isSupported: isBiometricSupported,
+    isRegistering: isBiometricRegistering,
+    registeredUser: biometricRegisteredUser,
+    checkSupport: checkBiometricSupport,
+    loadRegisteredDevice: loadBiometricDevice,
+    registerDevice: registerBiometricDevice,
+    removeBiometric: removeBiometricDevice,
+} = useBiometricAuth();
+
+const showBiometricBanner = ref(false);
+const biometricSuccessMsg = ref(null);
+const isBiometricModalOpen = ref(false);
+
+const handleActivateBiometric = async () => {
+    try {
+        await registerBiometricDevice(page.props.auth.user);
+        showBiometricBanner.value = false;
+        biometricSuccessMsg.value = 'Kunci layar HP berhasil diaktifkan! Anda bisa masuk instan berikutnya.';
+        setTimeout(() => {
+            biometricSuccessMsg.value = null;
+        }, 4000);
+    } catch (e) {
+        if (e.message && !e.message.includes('dibatalkan')) {
+            alert(e.message || 'Gagal mengaktifkan kunci layar.');
+        }
+    }
+};
+
+const handleRemoveBiometric = async () => {
+    if (confirm('Lepas kunci layar dari perangkat ini?')) {
+        await removeBiometricDevice();
+        isBiometricModalOpen.value = false;
+        biometricSuccessMsg.value = 'Kunci layar berhasil dinonaktifkan.';
+        setTimeout(() => {
+            biometricSuccessMsg.value = null;
+        }, 3000);
+    }
+};
+
+const dismissBiometricBanner = () => {
+    showBiometricBanner.value = false;
+    localStorage.setItem('biometric_banner_dismissed', 'true');
+};
 
 // Saat komponen pertama kali dimuat di browser
 const pwaStatus = ref('Mendeteksi...');
@@ -36,8 +85,6 @@ const pwaStatus = ref('Mendeteksi...');
 onMounted(() => {
     // Deteksi apakah dijalankan dari instalan (PWA) atau browser biasa
     if (typeof window !== 'undefined') {
-        // Karena di manifest.json kita pakai "display": "fullscreen", 
-        // kita harus cek display-mode: fullscreen juga!
         const isInstalled = window.matchMedia('(display-mode: standalone)').matches || 
                             window.matchMedia('(display-mode: fullscreen)').matches || 
                             window.matchMedia('(display-mode: minimal-ui)').matches || 
@@ -45,6 +92,19 @@ onMounted(() => {
                             document.referrer.includes('android-app://');
         
         pwaStatus.value = isInstalled ? 'Instalan' : 'Browser';
+
+        // Cek dukungan kunci layar HP & tampilkan tawaran jika belum aktif
+        checkBiometricSupport().then(async (supported) => {
+            if (supported) {
+                const registered = await loadBiometricDevice();
+                const isDismissed = localStorage.getItem('biometric_banner_dismissed') === 'true';
+                if (!registered && !isDismissed && page.props.auth?.user) {
+                    setTimeout(() => {
+                        showBiometricBanner.value = true;
+                    }, 1800);
+                }
+            }
+        });
     }
 });
 
@@ -63,8 +123,6 @@ const swipeOffset = ref(0);
 const isSwiping = ref(false);
 const isDragging = ref(false);
 
-import { usePage } from '@inertiajs/vue3';
-const page = usePage();
 const isSuperAdmin = computed(() => page.props.auth?.is_super_admin);
 const userRole = computed(() => page.props.auth?.user?.role);
 const isGudang = computed(() => userRole.value === 'GUDANG');
@@ -598,6 +656,17 @@ const transitionProps = computed(() => {
                         </p>
                     </div>
                 </div>
+                <!-- Tombol Kunci Layar / Biometrik -->
+                <button
+                    v-if="isBiometricSupported && !isCollapsed"
+                    type="button"
+                    @click="isBiometricModalOpen = true"
+                    class="text-gray-400 hover:text-primary transition-colors p-2 rounded-lg hover:bg-primary/10 shrink-0 ml-auto"
+                    :title="biometricRegisteredUser ? 'Kunci Layar HP Aktif' : 'Aktifkan Kunci Layar HP'"
+                >
+                    <i :class="biometricRegisteredUser ? 'ri-fingerprint-line text-emerald-600' : 'ri-fingerprint-line text-gray-400'" class="text-lg"></i>
+                </button>
+
                 <!-- Tombol Logout -->
                 <Link 
                     v-if="!isCollapsed"
@@ -1002,6 +1071,20 @@ const transitionProps = computed(() => {
                             Ekspedisi (Agregator)
                         </Link>
                         
+                        <button
+                            v-if="isBiometricSupported"
+                            type="button"
+                            @click="showMobileMenu = false; isBiometricModalOpen = true"
+                            class="w-full flex items-center justify-between p-4 rounded-xl transition font-medium bg-gray-50 text-gray-700 hover:bg-gray-100"
+                        >
+                            <div class="flex items-center gap-3">
+                                <i class="ri-fingerprint-line text-xl text-primary"></i>
+                                <span>Kunci Layar HP (Biometrik)</span>
+                            </div>
+                            <span v-if="biometricRegisteredUser" class="text-xs bg-emerald-100 text-emerald-700 px-2.5 py-0.5 rounded-full font-bold">Aktif</span>
+                            <span v-else class="text-xs bg-amber-100 text-amber-700 px-2.5 py-0.5 rounded-full font-bold">Belum Aktif</span>
+                        </button>
+
                         <Link 
                             :href="route('logout')" 
                             method="post" 
@@ -1050,6 +1133,145 @@ const transitionProps = computed(() => {
             <i :class="pwaStatus === 'Instalan' ? 'ri-smartphone-line text-green-400' : 'ri-global-line text-blue-400'"></i>
             <span class="tracking-wide uppercase">{{ pwaStatus }}</span>
         </div>
+
+        <!-- Toast Sukses Biometrik -->
+        <Transition
+            enter-active-class="transition-transform transition-opacity duration-300 ease-out"
+            enter-from-class="-translate-y-6 opacity-0"
+            enter-to-class="translate-y-0 opacity-100"
+            leave-active-class="transition-transform transition-opacity duration-200 ease-in"
+            leave-from-class="translate-y-0 opacity-100"
+            leave-to-class="-translate-y-6 opacity-0"
+        >
+            <div v-if="biometricSuccessMsg" class="fixed top-4 left-1/2 -translate-x-1/2 z-[110] bg-emerald-600 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 max-w-sm w-[90%] pointer-events-auto">
+                <i class="ri-checkbox-circle-fill text-2xl shrink-0"></i>
+                <p class="text-xs font-semibold leading-relaxed">{{ biometricSuccessMsg }}</p>
+            </div>
+        </Transition>
+
+        <!-- Floating Prompt: Aktifkan Kunci Layar HP -->
+        <Transition
+            enter-active-class="transition-all duration-300 ease-out"
+            enter-from-class="translate-y-12 opacity-0 scale-95"
+            enter-to-class="translate-y-0 opacity-100 scale-100"
+            leave-active-class="transition-all duration-200 ease-in"
+            leave-from-class="translate-y-0 opacity-100 scale-100"
+            leave-to-class="translate-y-12 opacity-0 scale-95"
+        >
+            <div 
+                v-if="showBiometricBanner && isBiometricSupported && !biometricRegisteredUser" 
+                class="fixed bottom-20 left-4 right-4 md:left-auto md:right-6 md:w-96 z-[95] bg-gradient-to-br from-gray-900 to-gray-800 text-white p-4 rounded-2xl shadow-2xl border border-white/10"
+            >
+                <div class="flex items-start gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-primary/20 border border-primary/40 flex items-center justify-center shrink-0 text-primary">
+                        <i class="ri-fingerprint-line text-2xl"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center justify-between">
+                            <h4 class="font-bold text-sm text-white">Login Kunci Layar HP</h4>
+                            <button @click="dismissBiometricBanner" class="text-gray-400 hover:text-white -mr-1 -mt-1 p-1">
+                                <i class="ri-close-line text-lg"></i>
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-300 mt-1 leading-relaxed">
+                            Buka aplikasi lebih cepat tanpa ketik sandi dengan Sidik Jari, Wajah, atau PIN/Pola HP Anda.
+                        </p>
+                        <div class="mt-3 flex items-center gap-2">
+                            <button
+                                @click="handleActivateBiometric"
+                                :disabled="isBiometricRegistering"
+                                class="flex-1 bg-primary hover:bg-primary/90 text-white text-xs font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+                            >
+                                <i v-if="isBiometricRegistering" class="ri-loader-4-line animate-spin"></i>
+                                <i v-else class="ri-shield-keyhole-line"></i>
+                                <span>{{ isBiometricRegistering ? 'Memproses...' : 'Aktifkan Sekarang' }}</span>
+                            </button>
+                            <button
+                                @click="dismissBiometricBanner"
+                                class="text-xs text-gray-400 hover:text-white py-2 px-3 rounded-lg hover:bg-white/5 transition"
+                            >
+                                Nanti
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </Transition>
+
+        <!-- Modal Pengaturan Kunci Layar & Biometrik -->
+        <Transition
+            enter-active-class="transition duration-200 ease-out"
+            enter-from-class="opacity-0"
+            enter-to-class="opacity-100"
+            leave-active-class="transition duration-150 ease-in"
+            leave-from-class="opacity-100"
+            leave-to-class="opacity-0"
+        >
+            <div v-if="isBiometricModalOpen" class="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-gray-100 relative">
+                    <button 
+                        @click="isBiometricModalOpen = false" 
+                        class="absolute top-4 right-4 w-8 h-8 rounded-full bg-gray-100 text-gray-400 hover:text-gray-700 hover:bg-gray-200 flex items-center justify-center transition"
+                    >
+                        <i class="ri-close-line text-xl"></i>
+                    </button>
+
+                    <div class="text-center">
+                        <div class="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 text-primary mx-auto flex items-center justify-center mb-3">
+                            <i class="ri-fingerprint-line text-4xl"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-gray-900">Kunci Layar HP & Biometrik</h3>
+                        <p class="text-xs text-gray-500 mt-1">
+                            Gunakan Sidik Jari, Face Unlock, atau Pola/PIN layar HP untuk masuk tanpa repot mengetik password.
+                        </p>
+                    </div>
+
+                    <div class="mt-5 p-4 rounded-2xl bg-gray-50 border border-gray-100 space-y-2">
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="text-gray-500">Status di Perangkat ini:</span>
+                            <span v-if="biometricRegisteredUser" class="font-bold text-emerald-600 flex items-center gap-1">
+                                <i class="ri-checkbox-circle-fill"></i> Terhubung
+                            </span>
+                            <span v-else class="font-bold text-amber-600 flex items-center gap-1">
+                                <i class="ri-close-circle-fill"></i> Belum Terhubung
+                            </span>
+                        </div>
+                        <div v-if="biometricRegisteredUser" class="text-[11px] text-gray-500 pt-1 border-t border-gray-200/60">
+                            Terdaftar untuk: <b class="text-gray-800">{{ biometricRegisteredUser.name }}</b> ({{ biometricRegisteredUser.username }})
+                        </div>
+                    </div>
+
+                    <div class="mt-5 space-y-2">
+                        <button
+                            v-if="!biometricRegisteredUser"
+                            @click="handleActivateBiometric"
+                            :disabled="isBiometricRegistering"
+                            class="w-full bg-primary hover:bg-primary/90 text-white font-bold py-3 px-4 rounded-xl text-sm flex items-center justify-center gap-2 transition shadow-lg shadow-primary/20 disabled:opacity-50"
+                        >
+                            <i v-if="isBiometricRegistering" class="ri-loader-4-line animate-spin"></i>
+                            <i v-else class="ri-shield-keyhole-line text-lg"></i>
+                            <span>{{ isBiometricRegistering ? 'Menghubungkan...' : 'Aktifkan di Perangkat Ini' }}</span>
+                        </button>
+
+                        <button
+                            v-else
+                            @click="handleRemoveBiometric"
+                            class="w-full bg-red-50 hover:bg-red-100 text-red-600 font-bold py-3 px-4 rounded-xl text-sm flex items-center justify-center gap-2 transition border border-red-200"
+                        >
+                            <i class="ri-delete-bin-line text-lg"></i>
+                            <span>Hapus dari Perangkat Ini</span>
+                        </button>
+
+                        <button
+                            @click="isBiometricModalOpen = false"
+                            class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2.5 px-4 rounded-xl text-xs transition"
+                        >
+                            Tutup
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Transition>
 
     </div>
 </template>
