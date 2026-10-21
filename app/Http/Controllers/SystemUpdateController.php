@@ -11,12 +11,16 @@ use Illuminate\Http\Request;
 class SystemUpdateController extends Controller
 {
     /**
-     * Pastikan pengguna adalah Administrator (Super Admin atau Admin Ekspedisi)
+     * Pastikan pengguna adalah Super Admin Platform Pusat (Owner)
      */
     private function authorizeAdmin(): void
     {
         $user = auth()->user();
-        abort_unless($user && ($user->expedition_id === null || in_array($user->role, ['ADMIN', 'SUPER_ADMIN', 'OWNER'])), 403, 'Akses ditolak. Fitur pembaruan sistem hanya dapat diakses oleh Administrator.');
+        abort_unless(
+            $user && $user->expedition_id === null && in_array($user->role, ['ADMIN', 'SUPER_ADMIN', 'OWNER']),
+            403,
+            'Akses ditolak. Fitur pembaruan sistem hanya dapat diakses oleh Super Admin / Pemilik Platform.'
+        );
     }
 
     /**

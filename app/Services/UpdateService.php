@@ -178,25 +178,65 @@ class UpdateService
      */
     public function downloadUpdate(string $repo, string $branch = 'main'): bool
     {
-        $repo = trim($repo);
+        $repo = preg_replace('#^https?://github\.com/#i', '', trim($repo));
+        $repo = preg_replace('#\.git$#i', '', $repo);
+        $repo = trim($repo, '/');
         $branch = trim($branch) ?: 'main';
-        $zipUrl = "https://github.com/{$repo}/archive/refs/heads/{$branch}.zip";
 
         if (File::exists($this->tempZipPath)) {
             File::delete($this->tempZipPath);
         }
 
-        $response = Http::withoutVerifying()
-            ->withHeaders($this->getHeaders())
-            ->sink($this->tempZipPath)
-            ->timeout(300)
-            ->get($zipUrl);
+        // Urutan endpoint unduhan yang tahan banting:
+        // 1. Codeload langsung tanpa token (solusi terandal untuk repo publik, bebas blokir 404 dari token usang)
+        // 2. GitHub REST API zipball (resmi untuk repo privat dengan Personal Access Token)
+        // 3. Web archive standar fallback
+        $endpoints = [
+            [
+                'url' => "https://codeload.github.com/{$repo}/zip/refs/heads/{$branch}",
+                'headers' => ['User-Agent' => 'JeparaCargo-Update-System', 'Cache-Control' => 'no-cache'],
+            ],
+            [
+                'url' => "https://api.github.com/repos/{$repo}/zipball/{$branch}",
+                'headers' => array_merge($this->getHeaders(), ['Accept' => 'application/vnd.github+json']),
+            ],
+            [
+                'url' => "https://github.com/{$repo}/archive/refs/heads/{$branch}.zip",
+                'headers' => ['User-Agent' => 'JeparaCargo-Update-System'],
+            ],
+        ];
 
-        if (!$response->successful()) {
+        $lastError = null;
+        $success = false;
+
+        foreach ($endpoints as $ep) {
+            try {
+                if (File::exists($this->tempZipPath)) {
+                    File::delete($this->tempZipPath);
+                }
+
+                $response = Http::withoutVerifying()
+                    ->withHeaders($ep['headers'])
+                    ->sink($this->tempZipPath)
+                    ->timeout(300)
+                    ->get($ep['url']);
+
+                if ($response->successful() && File::exists($this->tempZipPath) && File::size($this->tempZipPath) > 1000) {
+                    $success = true;
+                    break;
+                } else {
+                    $lastError = 'HTTP ' . $response->status();
+                }
+            } catch (Exception $e) {
+                $lastError = $e->getMessage();
+            }
+        }
+
+        if (!$success) {
             if (File::exists($this->tempZipPath)) {
                 File::delete($this->tempZipPath);
             }
-            throw new Exception("Gagal mengunduh file update dari GitHub (HTTP " . $response->status() . "). Pastikan repository publik atau token GitHub valid.");
+            throw new Exception("Gagal mengunduh file update dari GitHub ({$lastError}). Pastikan repository publik atau token GitHub valid.");
         }
 
         return true;

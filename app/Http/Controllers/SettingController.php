@@ -69,11 +69,11 @@ class SettingController extends Controller
             ->whereIn('key', ['github_repo', 'github_branch', 'system_current_sha'])
             ->pluck('value', 'key')->toArray();
 
-        $githubData = [
+        $githubData = $isSuperAdmin ? [
             'repo' => $githubSettings['github_repo'] ?? env('GITHUB_REPO', ''),
             'branch' => $githubSettings['github_branch'] ?? env('GITHUB_BRANCH', 'main'),
             'current_sha' => $githubSettings['system_current_sha'] ?? null,
-        ];
+        ] : null;
 
         return Inertia::render('Settings/Index', [
             'app' => $appData,

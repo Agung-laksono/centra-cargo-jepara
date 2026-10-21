@@ -34,7 +34,6 @@ const topTabs = computed(() => {
         { id: 'tabCompany', label: 'Informasi Perusahaan', shortLabel: 'Perusahaan', icon: 'ri-building-4-line' },
         { id: 'tabUsers', label: 'Staf & Supir', shortLabel: 'Staf', icon: 'ri-team-line' },
         { id: 'tabWarehouses', label: 'Gudang Cabang', shortLabel: 'Gudang', icon: 'ri-store-2-line' },
-        { id: 'tabUpdate', label: 'Pembaruan Sistem', shortLabel: 'Update', icon: 'ri-refresh-line' },
     ];
 });
 
@@ -287,6 +286,7 @@ const checkUpdate = async () => {
         const response = await window.axios.post(route('settings.update.check'), {
             repo: githubConfig.value.repo,
             branch: githubConfig.value.branch,
+            token: githubConfig.value.token || null,
         });
         updateCheckResult.value = response.data;
     } catch (err) {
@@ -323,6 +323,7 @@ const runManualUpdate = async () => {
             step: 2,
             repo: githubConfig.value.repo,
             branch: githubConfig.value.branch,
+            token: githubConfig.value.token || null,
         });
         updateLogs.value.push(`[${new Date().toLocaleTimeString()}] ${resStep2.data.message}`);
 
@@ -836,8 +837,8 @@ const purgeAllCache = async () => {
                 </div>
             </template>
 
-            <!-- TAB: PEMBARUAN SISTEM (GITHUB SYNC) -->
-            <template #tabUpdate>
+            <!-- TAB: PEMBARUAN SISTEM (KHUSUS SUPER ADMIN) -->
+            <template v-if="isSuperAdmin" #tabUpdate>
                 <div class="max-w-4xl mx-auto space-y-6">
                     
                     <!-- Banner Pengantar -->
@@ -944,29 +945,44 @@ const purgeAllCache = async () => {
                             </span>
                         </div>
 
-                        <form @submit.prevent="saveGithubConfig" class="grid grid-cols-1 sm:grid-cols-12 gap-4 items-end">
-                            <div class="sm:col-span-5">
-                                <label class="block text-xs font-bold text-gray-700 mb-1">Repository GitHub <span class="text-red-500">*</span></label>
-                                <div class="relative">
-                                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                                        <i class="ri-git-repository-line"></i>
-                                    </span>
-                                    <input v-model="githubConfig.repo" type="text" placeholder="username/jepara-cargo-app" class="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary" required>
+                        <form @submit.prevent="saveGithubConfig" class="space-y-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                                <div class="sm:col-span-4">
+                                    <label class="block text-xs font-bold text-gray-700 mb-1">Repository GitHub <span class="text-red-500">*</span></label>
+                                    <div class="relative">
+                                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                                            <i class="ri-git-repository-line"></i>
+                                        </span>
+                                        <input v-model="githubConfig.repo" type="text" placeholder="Agung-laksono/centra-cargo-jepara" class="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary" required>
+                                    </div>
+                                </div>
+
+                                <div class="sm:col-span-3">
+                                    <label class="block text-xs font-bold text-gray-700 mb-1">Branch Target <span class="text-red-500">*</span></label>
+                                    <div class="relative">
+                                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                                            <i class="ri-git-branch-line"></i>
+                                        </span>
+                                        <input v-model="githubConfig.branch" type="text" placeholder="main" class="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary" required>
+                                    </div>
+                                </div>
+
+                                <div class="sm:col-span-5">
+                                    <label class="block text-xs font-bold text-gray-700 mb-1">
+                                        Personal Access Token (PAT)
+                                        <span class="text-gray-400 font-normal text-[11px]">(Wajib jika Repo Private)</span>
+                                    </label>
+                                    <div class="relative">
+                                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                                            <i class="ri-key-2-line"></i>
+                                        </span>
+                                        <input v-model="githubConfig.token" type="password" placeholder="ghp_xxxxxxxxxxxx (kosongkan jika publik)" class="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary">
+                                    </div>
                                 </div>
                             </div>
 
-                            <div class="sm:col-span-3">
-                                <label class="block text-xs font-bold text-gray-700 mb-1">Branch Target <span class="text-red-500">*</span></label>
-                                <div class="relative">
-                                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
-                                        <i class="ri-git-branch-line"></i>
-                                    </span>
-                                    <input v-model="githubConfig.branch" type="text" placeholder="main" class="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary" required>
-                                </div>
-                            </div>
-
-                            <div class="sm:col-span-4 flex gap-2">
-                                <button type="submit" :disabled="isSavingConfig" class="flex-1 px-4 py-2 bg-gray-900 text-white font-bold rounded-xl text-xs hover:bg-black transition flex items-center justify-center gap-1.5 shadow-sm">
+                            <div class="flex justify-end gap-2 pt-2 border-t border-gray-100">
+                                <button type="submit" :disabled="isSavingConfig" class="px-4 py-2 bg-gray-900 text-white font-bold rounded-xl text-xs hover:bg-black transition flex items-center justify-center gap-1.5 shadow-sm">
                                     <i class="ri-save-line"></i>
                                     {{ isSavingConfig ? 'Menyimpan...' : 'Simpan Sumber' }}
                                 </button>
