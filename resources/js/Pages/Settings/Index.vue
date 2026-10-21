@@ -713,29 +713,39 @@ const testBroadcastConnection = async () => {
         });
 
         if (echo) {
-            const channel = echo.channel('test-channel');
-            channel.listen('.test.connection', (e) => {
+            const handleSuccess = (e) => {
                 broadcastTestResult.value = {
                     status: 'success',
-                    message: e.message || 'Koneksi real-time berhasil diverifikasi!',
-                    receivedAt: e.timestamp || new Date().toLocaleTimeString(),
-                    driver: e.driver || integrationForm.driver,
+                    message: (e && e.message) || 'Koneksi real-time berhasil diverifikasi!',
+                    receivedAt: (e && e.timestamp) || new Date().toLocaleTimeString(),
+                    driver: (e && e.driver) || integrationForm.driver,
                 };
                 isTestingBroadcast.value = false;
-            });
+            };
+
+            const channel = echo.channel('test-channel');
+            channel.listen('.test.connection', handleSuccess);
+            channel.listen('test.connection', handleSuccess);
+
+            if (echo.connector && echo.connector.pusher) {
+                try {
+                    const rawChan = echo.connector.pusher.subscribe('test-channel');
+                    rawChan.bind('test.connection', handleSuccess);
+                } catch (e) {}
+            }
         }
 
-        const res = await window.axios.post(route('settings.integration.test'));
+        const res = await window.axios.post(route('settings.integration.test'), integrationForm.data());
         if (res.data.status === 'success') {
             setTimeout(() => {
                 if (broadcastTestResult.value?.status === 'testing') {
                     broadcastTestResult.value = {
                         status: 'warning',
-                        message: 'Event terkirim di backend, namun browser belum menerima event. Periksa kembali Key, Cluster/Host, Port, atau pastikan driver aktif.',
+                        message: res.data.message || 'Event terkirim di backend, namun browser belum menerima event. Periksa kembali Key, Cluster/Host, Port, atau pastikan driver aktif.',
                     };
                     isTestingBroadcast.value = false;
                 }
-            }, 4500);
+            }, 5000);
         }
     } catch (err) {
         broadcastTestResult.value = {

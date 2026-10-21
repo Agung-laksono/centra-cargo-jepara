@@ -277,18 +277,82 @@ class SettingController extends Controller
         abort_unless(auth()->user() && auth()->user()->expedition_id === null, 403, 'Akses ditolak.');
 
         try {
-            $driver = config('broadcasting.default');
+            $settings = Setting::withoutGlobalScope('expedition')
+                ->whereNull('expedition_id')
+                ->whereIn('key', [
+                    'broadcast_driver',
+                    'pusher_app_id', 'pusher_app_key', 'pusher_app_secret', 'pusher_app_cluster', 'pusher_scheme',
+                    'reverb_app_id', 'reverb_app_key', 'reverb_app_secret', 'reverb_host', 'reverb_port', 'reverb_scheme'
+                ])
+                ->pluck('value', 'key')->toArray();
+
+            $driver = $request->input('driver') ?: ($settings['broadcast_driver'] ?? 'pusher');
+
+            if ($driver === 'pusher') {
+                $appId = $request->input('pusher_app_id') ?: ($settings['pusher_app_id'] ?? env('PUSHER_APP_ID', ''));
+                $key = $request->input('pusher_app_key') ?: ($settings['pusher_app_key'] ?? env('PUSHER_APP_KEY', ''));
+                $secret = $request->input('pusher_app_secret') ?: ($settings['pusher_app_secret'] ?? env('PUSHER_APP_SECRET', ''));
+                $cluster = $request->input('pusher_app_cluster') ?: ($settings['pusher_app_cluster'] ?? env('PUSHER_APP_CLUSTER', 'ap1'));
+                $scheme = $request->input('pusher_scheme') ?: ($settings['pusher_scheme'] ?? env('PUSHER_SCHEME', 'https'));
+
+                if (empty($appId) || empty($key) || empty($secret)) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'App ID, App Key, dan App Secret Pusher wajib diisi sebelum melakukan tes.',
+                    ], 422);
+                }
+
+                config([
+                    'broadcasting.default' => 'pusher',
+                    'broadcasting.connections.pusher.driver' => 'pusher',
+                    'broadcasting.connections.pusher.key' => $key,
+                    'broadcasting.connections.pusher.secret' => $secret,
+                    'broadcasting.connections.pusher.app_id' => $appId,
+                    'broadcasting.connections.pusher.options.cluster' => $cluster,
+                    'broadcasting.connections.pusher.options.host' => 'api-' . ($cluster ?: 'ap1') . '.pusher.com',
+                    'broadcasting.connections.pusher.options.scheme' => $scheme,
+                    'broadcasting.connections.pusher.options.useTLS' => ($scheme === 'https'),
+                ]);
+            } elseif ($driver === 'reverb') {
+                $appId = $request->input('reverb_app_id') ?: ($settings['reverb_app_id'] ?? env('REVERB_APP_ID', ''));
+                $key = $request->input('reverb_app_key') ?: ($settings['reverb_app_key'] ?? env('REVERB_APP_KEY', ''));
+                $secret = $request->input('reverb_app_secret') ?: ($settings['reverb_app_secret'] ?? env('REVERB_APP_SECRET', ''));
+                $host = $request->input('reverb_host') ?: ($settings['reverb_host'] ?? env('REVERB_HOST', 'localhost'));
+                $port = $request->input('reverb_port') ?: ($settings['reverb_port'] ?? env('REVERB_PORT', 8080));
+                $scheme = $request->input('reverb_scheme') ?: ($settings['reverb_scheme'] ?? env('REVERB_SCHEME', 'https'));
+
+                config([
+                    'broadcasting.default' => 'reverb',
+                    'broadcasting.connections.reverb.driver' => 'reverb',
+                    'broadcasting.connections.reverb.key' => $key,
+                    'broadcasting.connections.reverb.secret' => $secret,
+                    'broadcasting.connections.reverb.app_id' => $appId,
+                    'broadcasting.connections.reverb.options.host' => $host,
+                    'broadcasting.connections.reverb.options.port' => (int) $port,
+                    'broadcasting.connections.reverb.options.scheme' => $scheme,
+                    'broadcasting.connections.reverb.options.useTLS' => ($scheme === 'https'),
+                ]);
+            } else {
+                return response()->json([
+                    'status' => 'warning',
+                    'message' => 'Driver saat ini adalah "log". Untuk menguji WebSocket real-time, pilih Pusher atau Reverb.',
+                ]);
+            }
+
+            // Reset driver cache agar instance baru dibuat dengan kredensial yang baru
+            app('Illuminate\Broadcasting\BroadcastManager')->forgetDrivers();
+
             broadcast(new \App\Events\TestBroadcastEvent("Koneksi {$driver} Berhasil! Waktu: " . now()->format('H:i:s') . ' WIB'));
 
             return response()->json([
                 'status' => 'success',
-                'message' => "Event tes berhasil dikirim via driver '{$driver}'! Memeriksa respon balik di browser...",
+                'message' => "Event tes berhasil dikirim ke Pusher (Cluster: " . ($cluster ?? '-') . ")! Memeriksa respon balik di browser...",
                 'driver' => $driver,
             ]);
         } catch (\Throwable $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Gagal mengirim event broadcast: ' . $e->getMessage(),
+                'message' => 'Gagal mengirim event broadcast ke Pusher: ' . $e->getMessage(),
             ], 500);
         }
     }
