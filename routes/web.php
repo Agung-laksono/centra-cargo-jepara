@@ -1229,6 +1229,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/settings/update/check', [\App\Http\Controllers\SystemUpdateController::class, 'check'])->name('settings.update.check');
     Route::post('/settings/update/config', [\App\Http\Controllers\SystemUpdateController::class, 'saveConfig'])->name('settings.update.config');
     Route::post('/settings/update/step', [\App\Http\Controllers\SystemUpdateController::class, 'executeStep'])->name('settings.update.step');
+    Route::post('/settings/update/emergency-up', [\App\Http\Controllers\SystemUpdateController::class, 'emergencyUp'])->name('settings.update.emergency-up');
 
     // Manajemen Cadangan & Pemulihan Sistem (Super Admin)
     Route::get('/settings/backups', [\App\Http\Controllers\BackupController::class, 'index'])->name('settings.backups.index');

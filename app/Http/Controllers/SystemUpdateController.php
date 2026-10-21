@@ -144,9 +144,12 @@ class SystemUpdateController extends Controller
 
                 case 4:
                     // Fase 4: Migrasi & Reset Cache, lalu Buka kembali Maintenance Mode
-                    $commitSha = $request->input('commit_sha');
-                    $updateService->finalizeUpdate($commitSha);
-                    app(\App\Services\BackupService::class)->disableMaintenanceMode();
+                    try {
+                        $commitSha = $request->input('commit_sha');
+                        $updateService->finalizeUpdate($commitSha);
+                    } finally {
+                        app(\App\Services\BackupService::class)->disableMaintenanceMode();
+                    }
                     return response()->json([
                         'status' => 'success',
                         'step' => 4,
@@ -165,5 +168,18 @@ class SystemUpdateController extends Controller
         }
 
         return response()->json(['status' => 'error', 'message' => 'Tahap tidak valid.'], 400);
+    }
+
+    /**
+     * Nonaktifkan Maintenance Mode darurat (bila ada error tak terduga)
+     */
+    public function emergencyUp(): JsonResponse
+    {
+        $this->authorizeAdmin();
+        app(\App\Services\BackupService::class)->disableMaintenanceMode();
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Mode pemeliharaan sistem berhasil dinonaktifkan.',
+        ]);
     }
 }

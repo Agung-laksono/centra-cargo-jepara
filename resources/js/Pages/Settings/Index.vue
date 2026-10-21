@@ -325,12 +325,17 @@ const unlockBrowserNavigation = () => {
     window.removeEventListener('popstate', handlePopState);
 };
 
-const closeUpdateModal = () => {
+const closeUpdateModal = async () => {
     if (isUpdating.value && !updateError.value) return;
     isUpdateModalOpen.value = false;
     isUpdating.value = false;
     updateError.value = null;
     unlockBrowserNavigation();
+    try {
+        await window.axios.post(route('settings.update.emergency-up'));
+    } catch (e) {
+        // ignore
+    }
 };
 
 onUnmounted(() => {
@@ -401,6 +406,11 @@ const runManualUpdate = async () => {
         unlockBrowserNavigation();
         updateError.value = err.response?.data?.message || err.message || 'Terjadi kesalahan pada proses pembaruan.';
         updateLogs.value.push(`[ERROR] ${updateError.value}`);
+        try {
+            await window.axios.post(route('settings.update.emergency-up'));
+        } catch (e) {
+            // ignore
+        }
     }
 };
 
