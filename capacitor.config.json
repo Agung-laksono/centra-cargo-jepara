@@ -3,7 +3,7 @@
   "appName": "JeparaCargo",
   "webDir": "public",
   "server": {
-    "url": "https://cargo.juraganfurniture.com",
+    "url": "https://cargo.juraganfurniture.com/app",
     "cleartext": true
   },
   "plugins": {

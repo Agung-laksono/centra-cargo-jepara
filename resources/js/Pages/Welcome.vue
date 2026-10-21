@@ -1,6 +1,12 @@
 <script setup>
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import { ref, onMounted, onUnmounted } from 'vue';
+import { Capacitor } from '@capacitor/core';
+
+// Jika dibuka di dalam APK Android Native, langsung arahkan ke /app (portal operasional)
+if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
+    router.replace('/app');
+}
 
 const props = defineProps({
     canLogin: { type: Boolean },
@@ -88,6 +94,12 @@ const handleKeyDown = (e) => {
 
 onMounted(() => {
     if (typeof window !== 'undefined') {
+        const isNativeApp = Capacitor.isNativePlatform() || Capacitor.getPlatform() === 'android' || Boolean(window.Capacitor?.isNativePlatform());
+        if (isNativeApp) {
+            router.replace('/app');
+            return;
+        }
+
         window.addEventListener('keydown', handleKeyDown);
 
         // Ambil status dari cache / localStorage agar sekali buka tetap tersimpan

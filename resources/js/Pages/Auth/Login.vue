@@ -1,20 +1,27 @@
 <script setup>
 import InputError from '@/Components/InputError.vue';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Capacitor } from '@capacitor/core';
 
-defineProps({
+const props = defineProps({
     canResetPassword: { type: Boolean },
     status: { type: String },
+    mode: { type: String },
     users: { type: Array, default: () => [] }
+});
+
+const isMobileApp = computed(() => {
+    return props.mode === 'app' || (typeof window !== 'undefined' && Capacitor.isNativePlatform());
 });
 
 const form = useForm({
     email: '',
     password: '',
-    remember: false,
+    remember: isMobileApp.value,
 });
 
+const showPassword = ref(false);
 const showQuickLogin = ref(false);
 
 const submit = () => {
@@ -32,7 +39,7 @@ const quickLogin = (email) => {
 </script>
 
 <template>
-    <Head title="Masuk" />
+    <Head :title="isMobileApp ? 'Jepara Cargo Mobile' : 'Masuk'" />
 
     <div class="login-screen">
 
@@ -72,9 +79,12 @@ const quickLogin = (email) => {
 
                 <!-- Mobile Top Back Bar & Logo -->
                 <div class="mobile-top-bar">
-                    <Link :href="route('welcome')" class="mobile-back-btn">
+                    <Link v-if="!isMobileApp" :href="route('welcome')" class="mobile-back-btn">
                         <i class="ri-arrow-left-line"></i> Beranda
                     </Link>
+                    <div v-else class="mobile-app-tag">
+                        <i class="ri-steering-2-line"></i> Mode Supir & Gudang
+                    </div>
                     <div class="mobile-logo">
                         <div class="logo-box"><i class="ri-truck-fill"></i></div>
                         <span>{{ $page.props.app?.name || 'Aplikasi Cargo' }}</span>
@@ -82,8 +92,8 @@ const quickLogin = (email) => {
                 </div>
 
                 <div class="form-header">
-                    <h2>Selamat Datang</h2>
-                    <p>Masuk untuk mengakses sistem operasional</p>
+                    <h2>{{ isMobileApp ? 'Jepara Cargo Mobile' : 'Selamat Datang' }}</h2>
+                    <p>{{ isMobileApp ? 'Portal Masuk Supir & Petugas Gudang' : 'Masuk untuk mengakses sistem operasional' }}</p>
                 </div>
 
                 <div v-if="status" class="status-msg">
@@ -114,7 +124,7 @@ const quickLogin = (email) => {
                     <div class="field-group">
                         <div class="label-row">
                             <label for="password" class="field-label">Kata Sandi</label>
-                            <Link v-if="canResetPassword" :href="route('password.request')" class="forgot-link">
+                            <Link v-if="canResetPassword && !isMobileApp" :href="route('password.request')" class="forgot-link">
                                 Lupa kata sandi?
                             </Link>
                         </div>
@@ -122,13 +132,22 @@ const quickLogin = (email) => {
                             <i class="ri-lock-line input-icon"></i>
                             <input
                                 id="password"
-                                type="password"
+                                :type="showPassword ? 'text' : 'password'"
                                 class="field-input"
                                 v-model="form.password"
                                 required
                                 autocomplete="current-password"
                                 placeholder="••••••••"
                             />
+                            <button
+                                type="button"
+                                class="btn-toggle-eye"
+                                @click="showPassword = !showPassword"
+                                tabindex="-1"
+                                :title="showPassword ? 'Sembunyikan sandi' : 'Lihat sandi'"
+                            >
+                                <i :class="showPassword ? 'ri-eye-off-line' : 'ri-eye-line'"></i>
+                            </button>
                         </div>
                         <InputError :message="form.errors.password" />
                     </div>
@@ -139,7 +158,7 @@ const quickLogin = (email) => {
                             <input type="checkbox" v-model="form.remember" id="remember" />
                             <div class="checkmark"><i class="ri-check-line"></i></div>
                         </div>
-                        <span>Ingat saya</span>
+                        <span>Ingat saya di perangkat ini</span>
                     </label>
 
                     <!-- Submit -->
@@ -159,7 +178,7 @@ const quickLogin = (email) => {
                     </button>
                 </div>
 
-                <p class="back-link">
+                <p v-if="!isMobileApp" class="back-link">
                     <Link :href="route('welcome')" class="back-link-a">
                         <i class="ri-arrow-left-line"></i> Kembali ke Beranda
                     </Link>
@@ -374,6 +393,40 @@ const quickLogin = (email) => {
 .mobile-back-btn:hover {
     background: #e5e5ea;
     transform: translateX(-2px);
+}
+
+.mobile-app-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    background: rgba(var(--color-primary), 0.08);
+    border: 1px solid rgba(var(--color-primary), 0.2);
+    border-radius: 999px;
+    color: rgb(var(--color-primary));
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+.btn-toggle-eye {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: #8e8e93;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    transition: color 0.15s;
+}
+.btn-toggle-eye:hover {
+    color: #1d1d1f;
 }
 
 /* Mobile logo */

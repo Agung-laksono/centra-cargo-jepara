@@ -25,13 +25,30 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 
-Route::get('/', function () {
+Route::get('/', function (Request $request) {
+    if (auth()->check()) {
+        return redirect()->route('dashboard');
+    }
+
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
         'canRegister' => Route::has('register'),
         'apkDownloadUrl' => route('download.apk'),
     ]);
 })->name('welcome');
+
+// Rute Gateway Khusus Aplikasi Mobile Lapangan (Supir & Gudang)
+Route::get('/app', function (Request $request) {
+    if (auth()->check()) {
+        return redirect()->route('dashboard');
+    }
+
+    return redirect()->route('login', ['mode' => 'app']);
+})->name('mobile.gateway');
+
+Route::get('/supir', function () {
+    return redirect()->route('mobile.gateway');
+});
 
 // Direct Download APK Supir & Gudang
 Route::get('/download-apk', function () {

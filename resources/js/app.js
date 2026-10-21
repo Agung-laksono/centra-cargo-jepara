@@ -8,6 +8,14 @@ import { ZiggyVue } from '../../vendor/tightenco/ziggy';
 import { Fullscreen } from '@boengli/capacitor-fullscreen';
 
 import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
+
+// Auto-redirect jika dibuka dari dalam aplikasi mobile native APK dan berada di root /
+if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
+    if (window.location.pathname === '/' || window.location.pathname === '') {
+        window.location.replace('/app');
+    }
+}
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
