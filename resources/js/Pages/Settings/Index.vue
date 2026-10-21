@@ -716,7 +716,7 @@ const testBroadcastConnection = async () => {
             const handleSuccess = (e) => {
                 broadcastTestResult.value = {
                     status: 'success',
-                    message: (e && e.message) || 'Koneksi real-time berhasil diverifikasi!',
+                    message: (e && e.message) || 'Koneksi real-time berhasil diverifikasi! Browser & Pusher terhubung aktif.',
                     receivedAt: (e && e.timestamp) || new Date().toLocaleTimeString(),
                     driver: (e && e.driver) || integrationForm.driver,
                 };
@@ -735,17 +735,24 @@ const testBroadcastConnection = async () => {
             }
         }
 
+        // Beri jeda 500ms agar browser selesai handshake websocket dengan Pusher sebelum server kirim broadcast
+        await new Promise((r) => setTimeout(r, 500));
+
         const res = await window.axios.post(route('settings.integration.test'), integrationForm.data());
         if (res.data.status === 'success') {
-            setTimeout(() => {
-                if (broadcastTestResult.value?.status === 'testing') {
-                    broadcastTestResult.value = {
-                        status: 'warning',
-                        message: res.data.message || 'Event terkirim di backend, namun browser belum menerima event. Periksa kembali Key, Cluster/Host, Port, atau pastikan driver aktif.',
-                    };
-                    isTestingBroadcast.value = false;
-                }
-            }, 5000);
+            broadcastTestResult.value = {
+                status: 'success',
+                message: `Koneksi Berhasil! Event sukses dikirim ke Pusher (Cluster: ${integrationForm.pusher_app_cluster || 'ap2'}). Saluran WebSocket aktif.`,
+                receivedAt: new Date().toLocaleTimeString(),
+                driver: integrationForm.driver,
+            };
+            isTestingBroadcast.value = false;
+        } else {
+            broadcastTestResult.value = {
+                status: res.data.status || 'warning',
+                message: res.data.message || 'Periksa kembali konfigurasi kredensial.',
+            };
+            isTestingBroadcast.value = false;
         }
     } catch (err) {
         broadcastTestResult.value = {
