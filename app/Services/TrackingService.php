@@ -64,5 +64,11 @@ class TrackingService
         if (!$koliId) {
             Shipment::where('id', $shipmentId)->update(['current_status' => $status]);
         }
+
+        try {
+            broadcast(new \App\Events\ShipmentStatusUpdated($shipmentId, $status, $locationDesc, $koliId));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Broadcast ShipmentStatusUpdated failed: ' . $e->getMessage());
+        }
     }
 }

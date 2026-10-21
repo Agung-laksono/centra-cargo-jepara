@@ -8,6 +8,7 @@ let globalWasSwiped = false; // Flag untuk deteksi navigasi via swipe
 import { ref, onMounted, onUnmounted, onBeforeUnmount, onUpdated, provide, computed } from 'vue';
 import { Link, Head, router, usePage } from '@inertiajs/vue3';
 import { useBiometricAuth } from '@/Composables/useBiometricAuth';
+import { useEcho } from '@/Composables/useEcho';
 import ExpeditionHandshakeModal from '@/Components/ExpeditionHandshakeModal.vue';
 
 // Mendefinisikan properti (props) yang bisa diterima oleh Layout ini
@@ -108,7 +109,102 @@ onMounted(() => {
             }
         });
     }
+
+    // Inisialisasi Real-time Event Listener Global
+    setupGlobalEcho();
 });
+
+onBeforeUnmount(() => {
+    cleanupGlobalEcho();
+});
+
+// ==========================================
+// REAL-TIME NOTIFICATIONS LOGIC
+// ==========================================
+const { getEcho } = useEcho();
+const liveToasts = ref([]);
+let globalEchoChannels = [];
+
+const removeToast = (id) => {
+    liveToasts.value = liveToasts.value.filter(t => t.id !== id);
+};
+
+const addLiveToast = (toast) => {
+    const id = Date.now() + Math.random();
+    liveToasts.value.unshift({ id, ...toast });
+    if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+    setTimeout(() => {
+        removeToast(id);
+    }, 7000);
+};
+
+const setupGlobalEcho = () => {
+    const echo = getEcho();
+    if (!echo) return;
+
+    cleanupGlobalEcho();
+
+    const userExpeditionId = page.props.auth?.user?.expedition_id;
+
+    // 1. Ekspedisi & Kemitraan Channel
+    const expChannelName = userExpeditionId ? `expedition.${userExpeditionId}` : 'expeditions';
+    const expChannel = echo.channel(expChannelName);
+    globalEchoChannels.push(expChannel);
+
+    const handlePartnershipRequest = (e) => {
+        addLiveToast({
+            type: 'partnership',
+            title: 'Permohonan Kemitraan Baru',
+            message: `${e.driverName || 'Supir'} (${e.vehicleName || 'Armada'}) baru saja mengajukan kemitraan.`,
+            actionLabel: 'Tinjau',
+            action: () => { isHandshakeModalOpen.value = true; },
+        });
+    };
+    expChannel.listen('.partnership.requested', handlePartnershipRequest);
+    expChannel.listen('partnership.requested', handlePartnershipRequest);
+
+    // 2. Manifest Channel
+    const manifestChannel = echo.channel('manifests');
+    globalEchoChannels.push(manifestChannel);
+
+    const handleManifestHandshaked = (e) => {
+        addLiveToast({
+            type: 'manifest',
+            title: 'Serah Terima Manifest Sukses',
+            message: `Manifest #${e.manifestId} (${e.manifestType === 'PICKUP' ? 'Jemput' : 'Antar'}) diserahterimakan ke ${e.driverName || 'Supir'}.`,
+        });
+    };
+    manifestChannel.listen('.manifest.handshaked', handleManifestHandshaked);
+    manifestChannel.listen('manifest.handshaked', handleManifestHandshaked);
+
+    // 3. Resi Baru Channel
+    const shipmentChannel = echo.channel('shipments');
+    globalEchoChannels.push(shipmentChannel);
+
+    const handleShipmentCreated = (e) => {
+        addLiveToast({
+            type: 'shipment',
+            title: 'Resi Baru Dibuat',
+            message: `No: ${e.trackingNumber} · Tujuan: ${e.destinationCity || '-'} (${e.totalKoli || 1} Koli)`,
+        });
+    };
+    shipmentChannel.listen('.shipment.created', handleShipmentCreated);
+    shipmentChannel.listen('shipment.created', handleShipmentCreated);
+};
+
+const cleanupGlobalEcho = () => {
+    globalEchoChannels.forEach(ch => {
+        try {
+            ch.stopListening('.partnership.requested');
+            ch.stopListening('partnership.requested');
+            ch.stopListening('.manifest.handshaked');
+            ch.stopListening('manifest.handshaked');
+            ch.stopListening('.shipment.created');
+            ch.stopListening('shipment.created');
+        } catch (e) {}
+    });
+    globalEchoChannels = [];
+};
 
 // Fungsi untuk melipat/melebarkan sidebar di desktop
 const toggleCollapse = () => {
@@ -1304,6 +1400,68 @@ const transitionProps = computed(() => {
             :expedition-id="page.props.auth?.user?.expedition_id"
             @close="isHandshakeModalOpen = false"
         />
+
+        <!-- Floating Live Real-Time Notifications Toaster -->
+        <div class="fixed bottom-5 right-5 z-[9999] flex flex-col gap-2.5 max-w-sm w-full pointer-events-none">
+            <TransitionGroup
+                enter-active-class="transition duration-300 ease-out transform"
+                enter-from-class="translate-y-4 opacity-0 scale-95"
+                enter-to-class="translate-y-0 opacity-100 scale-100"
+                leave-active-class="transition duration-200 ease-in transform"
+                leave-from-class="opacity-100 scale-100"
+                leave-to-class="translate-x-full opacity-0 scale-90"
+            >
+                <div 
+                    v-for="toast in liveToasts" 
+                    :key="toast.id"
+                    class="pointer-events-auto bg-white/95 backdrop-blur-md rounded-2xl p-4 shadow-2xl border border-gray-100/90 flex items-start gap-3.5 ring-1 ring-black/5"
+                >
+                    <div 
+                        class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white shadow-md text-sm"
+                        :class="{
+                            'bg-amber-600 shadow-amber-600/30': toast.type === 'partnership',
+                            'bg-emerald-600 shadow-emerald-600/30': toast.type === 'manifest',
+                            'bg-blue-600 shadow-blue-600/30': toast.type === 'shipment',
+                        }"
+                    >
+                        <i v-if="toast.type === 'partnership'" class="fas fa-handshake"></i>
+                        <i v-else-if="toast.type === 'manifest'" class="fas fa-truck-ramp-box"></i>
+                        <i v-else class="fas fa-barcode"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center justify-between gap-1">
+                            <h4 class="text-xs font-bold text-gray-900 truncate">{{ toast.title }}</h4>
+                            <span class="text-[10px] text-gray-400 font-medium">Barusan</span>
+                        </div>
+                        <p class="text-[11px] text-gray-600 mt-0.5 leading-snug line-clamp-2">{{ toast.message }}</p>
+                        <div v-if="toast.actionLabel" class="mt-2 flex items-center gap-2">
+                            <button 
+                                @click="toast.action(); removeToast(toast.id)"
+                                type="button" 
+                                class="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] rounded-lg transition-all shadow-sm"
+                            >
+                                {{ toast.actionLabel }}
+                            </button>
+                            <button 
+                                @click="removeToast(toast.id)"
+                                type="button" 
+                                class="text-[10px] text-gray-400 hover:text-gray-600 font-medium"
+                            >
+                                Tutup
+                            </button>
+                        </div>
+                    </div>
+                    <button 
+                        v-if="!toast.actionLabel"
+                        @click="removeToast(toast.id)" 
+                        type="button" 
+                        class="text-gray-400 hover:text-gray-600 text-xs shrink-0"
+                    >
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </TransitionGroup>
+        </div>
 
     </div>
 </template>

@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
+import { useEcho } from '@/Composables/useEcho';
 import { useBiometricAuth } from '@/Composables/useBiometricAuth';
 import BarcodeScanner from '@/Components/BarcodeScanner.vue';
 import { BarcodeScanner as NativeBarcodeScanner, BarcodeFormat } from '@capacitor-mlkit/barcode-scanning';
@@ -85,20 +86,59 @@ const manualTokenInput = ref('');
 const isSubmittingHandshake = ref(false);
 const handshakeMsg = ref(null);
 
-const fetchPartnerships = async () => {
-    if (!currentUser.value) return;
-    try {
-        isLoadingPartnerships.value = true;
-        const res = await axios.get('/api/driver/partnerships');
-        if (res.data && res.data.partnerships) {
-            partnerships.value = res.data.partnerships;
-        }
-    } catch (e) {
-        console.warn('Gagal memuat kemitraan supir:', e);
-    } finally {
-        isLoadingPartnerships.value = false;
+const { getEcho } = useEcho();
+let driverEchoChannel = null;
+
+const setupDriverEcho = () => {
+    cleanupDriverEcho();
+    const echo = getEcho();
+    if (!echo || !currentUser.value) return;
+
+    const channelName = `user.${currentUser.value.id}`;
+    driverEchoChannel = echo.channel(channelName);
+
+    const handleStatusUpdate = (e) => {
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 300]);
+
+        handshakeMsg.value = {
+            type: e.status === 'ACTIVE' ? 'success' : 'pending',
+            text: e.message || 'Status kemitraan armada telah diperbarui!'
+        };
+
+        fetchPartnerships();
+        setTimeout(() => {
+            if (handshakeMsg.value?.text === e.message) {
+                handshakeMsg.value = null;
+            }
+        }, 7000);
+    };
+
+    driverEchoChannel.listen('.partnership.status_updated', handleStatusUpdate);
+    driverEchoChannel.listen('partnership.status_updated', handleStatusUpdate);
+};
+
+const cleanupDriverEcho = () => {
+    if (driverEchoChannel) {
+        try {
+            driverEchoChannel.stopListening('.partnership.status_updated');
+            driverEchoChannel.stopListening('partnership.status_updated');
+        } catch (err) {}
+        driverEchoChannel = null;
     }
 };
+
+watch(() => props.show, (isOpen) => {
+    if (isOpen) {
+        fetchPartnerships();
+        setupDriverEcho();
+    } else {
+        cleanupDriverEcho();
+    }
+});
+
+onBeforeUnmount(() => {
+    cleanupDriverEcho();
+});
 
 const handleConnectHandshake = async (tokenCode) => {
     const cleanToken = (tokenCode || manualTokenInput.value).trim();

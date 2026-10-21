@@ -1,6 +1,10 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import axios from 'axios';
+import { useEcho } from '@/Composables/useEcho';
+
+const { getEcho } = useEcho();
+let echoChannel = null;
 
 const props = defineProps({
     show: { type: Boolean, default: false },
@@ -74,12 +78,58 @@ const loadAllData = async () => {
     await fetchRequests();
 };
 
+const setupEchoListener = () => {
+    cleanupEchoListener();
+    const echo = getEcho();
+    if (!echo) return;
+
+    const channelName = props.expeditionId ? `expedition.${props.expeditionId}` : 'expeditions';
+    echoChannel = echo.channel(channelName);
+
+    const handleNewRequest = (e) => {
+        if (navigator.vibrate) navigator.vibrate([150, 80, 150]);
+
+        feedbackMsg.value = {
+            type: 'success',
+            text: `🔔 Permohonan Kemitraan Baru dari ${e.driverName || 'Supir'} (${e.vehicleName || 'Armada'})!`
+        };
+
+        fetchRequests();
+        fetchQrData();
+        setTimeout(() => {
+            if (feedbackMsg.value?.text?.includes('Permohonan Kemitraan Baru')) {
+                feedbackMsg.value = null;
+            }
+        }, 6000);
+    };
+
+    echoChannel.listen('.partnership.requested', handleNewRequest);
+    echoChannel.listen('partnership.requested', handleNewRequest);
+};
+
+const cleanupEchoListener = () => {
+    if (echoChannel) {
+        try {
+            echoChannel.stopListening('.partnership.requested');
+            echoChannel.stopListening('partnership.requested');
+        } catch (err) {}
+        echoChannel = null;
+    }
+};
+
 watch(() => props.show, (isOpen) => {
     if (isOpen) {
         showResetConfirm.value = false;
         feedbackMsg.value = null;
         loadAllData();
+        setupEchoListener();
+    } else {
+        cleanupEchoListener();
     }
+});
+
+onBeforeUnmount(() => {
+    cleanupEchoListener();
 });
 
 const qrImageUrl = computed(() => {

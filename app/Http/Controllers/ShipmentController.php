@@ -131,6 +131,15 @@ class ShipmentController extends Controller
             return $trackingNumber;
         });
 
+        try {
+            $createdShipment = Shipment::withoutGlobalScope('expedition')->where('tracking_number', $trackingNumber)->first();
+            if ($createdShipment) {
+                broadcast(new \App\Events\ShipmentCreated($createdShipment));
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Broadcast ShipmentCreated failed: ' . $e->getMessage());
+        }
+
         // Redirect kembali dengan pesan sukses
         return redirect()->route('buat-resi')->with([
             'success' => "Resi {$trackingNumber} telah berhasil dibuat!",

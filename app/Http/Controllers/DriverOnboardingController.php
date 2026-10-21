@@ -107,7 +107,7 @@ class DriverOnboardingController extends Controller
 
         // Buat relasi kemitraan jika mendaftar lewat pairing token ekspedisi (Menunggu persetujuan gudang)
         if ($expedition) {
-            DriverExpedition::create([
+            $partnership = DriverExpedition::create([
                 'driver_id' => $driver->id,
                 'user_id' => $user->id,
                 'expedition_id' => $expedition->id,
@@ -116,6 +116,12 @@ class DriverOnboardingController extends Controller
                 'handshake_code' => $expedition->partnership_token,
                 'partnered_at' => null,
             ]);
+
+            try {
+                broadcast(new \App\Events\PartnershipRequested($partnership));
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Broadcast PartnershipRequested failed: ' . $e->getMessage());
+            }
         }
 
         // Otomatis login supir
@@ -239,6 +245,12 @@ class DriverOnboardingController extends Controller
                 'updated_at' => now(),
             ]);
 
+            try {
+                broadcast(new \App\Events\PartnershipRequested($existing));
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Broadcast PartnershipRequested failed: ' . $e->getMessage());
+            }
+
             return response()->json([
                 'status' => 'pending',
                 'message' => 'Permohonan kemitraan berhasil diajukan ulang ke gudang ' . $expedition->name . '. Menunggu persetujuan staf.',
@@ -247,7 +259,7 @@ class DriverOnboardingController extends Controller
         }
 
         // Buat relasi kemitraan baru dengan status PENDING
-        DriverExpedition::create([
+        $partnership = DriverExpedition::create([
             'driver_id' => $driver->id,
             'user_id' => $user->id,
             'expedition_id' => $expedition->id,
@@ -256,6 +268,12 @@ class DriverOnboardingController extends Controller
             'handshake_code' => $expedition->partnership_token,
             'partnered_at' => null,
         ]);
+
+        try {
+            broadcast(new \App\Events\PartnershipRequested($partnership));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Broadcast PartnershipRequested failed: ' . $e->getMessage());
+        }
 
         return response()->json([
             'status' => 'pending',
@@ -624,6 +642,12 @@ class DriverOnboardingController extends Controller
         }
 
         $partnership->save();
+
+        try {
+            broadcast(new \App\Events\PartnershipStatusUpdated($partnership));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Broadcast PartnershipStatusUpdated failed: ' . $e->getMessage());
+        }
 
         $statusLabels = [
             'ACTIVE' => 'disetujui sebagai mitra aktif',
