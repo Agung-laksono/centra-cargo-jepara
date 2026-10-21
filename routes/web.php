@@ -206,9 +206,11 @@ Route::get('/supir/pickup', function (Request $request) {
             })->first();
 
             if ($driver) {
+                // Hanya muat otomatis tugas yang statusnya AKTIF BERJALAN (IN_TRANSIT / sudah di-handshake).
+                // Manifest yang masih 'PREPARING' / 'PENDING' belum diserahterimakan, supir tetap harus scan QR (Handshake).
                 $manifest = Manifest::where('driver_id', $driver->id)
                     ->where('manifest_type', 'PICKUP')
-                    ->whereNotIn('status', ['SELESAI', 'CANCELLED'])
+                    ->where('status', 'IN_TRANSIT')
                     ->latest()
                     ->first();
 
@@ -383,9 +385,11 @@ Route::get('/supir/lintas', function (Request $request) {
             })->first();
 
             if ($driver) {
+                // Hanya muat otomatis tugas yang statusnya AKTIF BERJALAN (IN_TRANSIT / sudah di-handshake).
+                // Manifest yang masih 'PREPARING' / 'PENDING' belum diserahterimakan, supir tetap harus scan QR (Handshake).
                 $manifest = Manifest::where('driver_id', $driver->id)
                     ->where('manifest_type', 'DELIVERY')
-                    ->whereNotIn('status', ['SELESAI', 'CANCELLED'])
+                    ->where('status', 'IN_TRANSIT')
                     ->latest()
                     ->first();
 

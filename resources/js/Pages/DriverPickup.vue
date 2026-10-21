@@ -55,9 +55,9 @@ const playBeep = (type = 'success') => {
     }
 };
 
-// Identifikasi status Standby (belum ada penugasan pickup aktif atau kosong)
+// Identifikasi status Standby (belum ada penugasan pickup aktif atau belum handshake)
 const isStandby = computed(() => {
-    return props.manifest?.status === 'STANDBY' || !props.manifest?.id || (!props.pickups || props.pickups.length === 0);
+    return props.manifest?.status === 'STANDBY' || props.manifest?.status === 'PREPARING' || !props.manifest?.id || (!props.pickups || props.pickups.length === 0);
 });
 
 const initialPickups = computed(() => {
@@ -607,6 +607,29 @@ const selesaikanJemput = (auto = false, force = false) => {
                 <p class="text-xs text-gray-500 mt-1.5 leading-relaxed">
                     Surat Tugas Pickup belum ditugaskan. Ambil surat penjemputan dari gudang ekspedisi dengan scan QR.
                 </p>
+
+                <!-- Box Konfirmasi Handshake jika Tugas Pickup Siap tapi belum diserahterimakan -->
+                <div v-if="manifest?.id && manifest?.status === 'PREPARING'" class="mt-4 p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-left">
+                    <div class="flex items-start gap-2">
+                        <i class="ri-information-fill text-lg text-amber-600 shrink-0 mt-0.5"></i>
+                        <div>
+                            <h4 class="font-extrabold text-xs text-amber-900">Surat Tugas #{{ manifest.id }} Menunggu Serah Terima</h4>
+                            <p class="text-[11px] text-amber-700 mt-0.5 leading-snug">
+                                Daftar penjemputan toko telah disiapkan di gudang. Lakukan serah terima tugas (handshake) untuk memuat daftar toko.
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        @click="handleClaimManifest(manifest.token || String(manifest.id))"
+                        :disabled="isClaimingManifest"
+                        class="mt-3 w-full py-2.5 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-600/20 active:scale-[0.98] transition disabled:opacity-50"
+                    >
+                        <i v-if="isClaimingManifest" class="ri-loader-4-line animate-spin text-sm"></i>
+                        <i v-else class="ri-shake-hands-line text-sm"></i>
+                        <span>{{ isClaimingManifest ? 'Memproses Serah Terima...' : 'Konfirmasi Terima Tugas Pickup (Handshake)' }}</span>
+                    </button>
+                </div>
 
                 <!-- Pesan Error / Sukses Handshake jika ada -->
                 <div v-if="claimManifestError" class="mt-4 p-3 rounded-xl bg-red-50 text-red-700 border border-red-200 text-xs font-semibold flex items-center gap-2 text-left">
