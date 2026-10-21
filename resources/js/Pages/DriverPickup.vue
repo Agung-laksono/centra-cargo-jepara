@@ -516,6 +516,57 @@ const selesaikanJemput = (auto = false, force = false) => {
         isSubmitting.value = false;
     });
 };
+
+// ==========================================
+// REAL-TIME PARTNERSHIP & MANIFEST LISTENER FOR DRIVER
+// ==========================================
+import { useEcho } from '@/Composables/useEcho';
+const { getEcho } = useEcho();
+const partnershipNotification = ref(null);
+let driverPageEchoChannel = null;
+
+const setupDriverPageEcho = () => {
+    const echo = getEcho();
+    const user = usePage().props.auth?.user;
+    if (!echo || !user) return;
+
+    driverPageEchoChannel = echo.channel(`user.${user.id}`);
+
+    const handlePartnershipStatus = (e) => {
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 300]);
+        playBeep(e.status === 'ACTIVE' ? 'success' : 'duplicate');
+
+        partnershipNotification.value = {
+            status: e.status,
+            title: e.status === 'ACTIVE' ? 'Kemitraan Disetujui! 🎉' : 'Permohonan Kemitraan Ditolak',
+            message: e.message || (e.status === 'ACTIVE' 
+                ? `Selamat! Anda telah disetujui sebagai Mitra Aktif di ${e.expeditionName || 'Ekspedisi'}.`
+                : `Permohonan kemitraan Anda di ${e.expeditionName || 'Ekspedisi'} telah ditolak.`),
+        };
+
+        // Reload data halaman agar status supir terbaru termuat
+        setTimeout(() => {
+            router.reload({ preserveScroll: true });
+        }, 1500);
+    };
+
+    driverPageEchoChannel.listen('.partnership.status_updated', handlePartnershipStatus);
+    driverPageEchoChannel.listen('partnership.status_updated', handlePartnershipStatus);
+};
+
+onMounted(() => {
+    setupDriverPageEcho();
+});
+
+onUnmounted(() => {
+    if (driverPageEchoChannel) {
+        try {
+            driverPageEchoChannel.stopListening('.partnership.status_updated');
+            driverPageEchoChannel.stopListening('partnership.status_updated');
+        } catch (e) {}
+        driverPageEchoChannel = null;
+    }
+});
 </script>
 
 <template>
@@ -1309,6 +1360,37 @@ const selesaikanJemput = (auto = false, force = false) => {
         >
             <i class="ri-checkbox-circle-fill text-xl text-emerald-200 shrink-0"></i>
             <p class="text-xs font-bold leading-snug">{{ claimSuccessMessage }}</p>
+        </div>
+    </Transition>
+
+    <!-- Real-time Partnership Status Alert Modal for Driver -->
+    <Transition
+        enter-active-class="transition duration-300 ease-out"
+        enter-from-class="opacity-0 scale-95"
+        enter-to-class="opacity-100 scale-100"
+        leave-active-class="transition duration-200 ease-in"
+        leave-from-class="opacity-100 scale-100"
+        leave-to-class="opacity-0 scale-95"
+    >
+        <div v-if="partnershipNotification" class="fixed inset-0 z-[9999] flex items-center justify-center p-5 bg-black/70 backdrop-blur-sm">
+            <div class="bg-white rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl border border-gray-100 ring-1 ring-black/5">
+                <div 
+                    class="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center text-3xl mb-4 shadow-lg"
+                    :class="partnershipNotification.status === 'ACTIVE' ? 'bg-emerald-500 text-white shadow-emerald-500/30' : 'bg-rose-500 text-white shadow-rose-500/30'"
+                >
+                    <i :class="partnershipNotification.status === 'ACTIVE' ? 'ri-checkbox-circle-fill' : 'ri-close-circle-fill'"></i>
+                </div>
+                <h3 class="text-lg font-black text-gray-900 mb-1.5">{{ partnershipNotification.title }}</h3>
+                <p class="text-xs text-gray-600 leading-relaxed mb-6">{{ partnershipNotification.message }}</p>
+                <button 
+                    @click="partnershipNotification = null" 
+                    type="button" 
+                    class="w-full py-3 rounded-xl font-bold text-xs text-white transition-all shadow-md active:scale-95"
+                    :class="partnershipNotification.status === 'ACTIVE' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30' : 'bg-gray-800 hover:bg-gray-900'"
+                >
+                    {{ partnershipNotification.status === 'ACTIVE' ? 'Siap Bekerja' : 'Tutup' }}
+                </button>
+            </div>
         </div>
     </Transition>
 </template>
