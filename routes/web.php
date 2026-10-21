@@ -22,7 +22,9 @@ use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\TrackingService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -66,11 +68,15 @@ Route::middleware('auth')->group(function () {
     // Handshake Kemitraan Supir & Ekspedisi
     Route::get('/api/driver/partnerships', [DriverOnboardingController::class, 'getPartnerships'])->name('driver.partnerships');
     Route::post('/api/driver/handshake', [DriverOnboardingController::class, 'connectHandshake'])->name('driver.handshake');
+    Route::post('/api/driver/claim-manifest', [DriverOnboardingController::class, 'claimManifest'])->name('driver.claim.manifest');
     Route::get('/api/expedition/handshake-qr', [DriverOnboardingController::class, 'getExpeditionQr'])->name('expedition.handshake.qr');
     Route::post('/api/expedition/reset-qr', [DriverOnboardingController::class, 'resetExpeditionQr'])->name('expedition.reset.qr');
     Route::get('/api/expedition/partner-requests', [DriverOnboardingController::class, 'getPartnerRequests'])->name('expedition.partner.requests');
     Route::post('/api/expedition/partner-requests/{id}/status', [DriverOnboardingController::class, 'updatePartnerStatus'])->name('expedition.partner.update_status');
 });
+
+// Endpoint publik handshake manifest (bisa diakses dengan session aktif atau auto-login via token surat jalan)
+Route::post('/api/driver/claim-manifest-guest', [DriverOnboardingController::class, 'claimManifest'])->name('driver.claim.manifest.guest');
 
 // Direct Download APK Supir & Gudang
 Route::get('/download-apk', function () {
@@ -227,10 +233,34 @@ Route::get('/supir/pickup', function (Request $request) {
         abort(404, 'Tautan penjemputan tidak valid atau belum ada tugas aktif.');
     }
 
-    $manifest = Manifest::with(['driver', 'expedition', 'kolis.shipment.sender'])
+    $manifest = Manifest::with(['driver.user', 'expedition', 'kolis.shipment.sender'])
         ->where('magic_link_token', $token)
         ->where('manifest_type', 'PICKUP')
         ->firstOrFail();
+
+    // Pastikan supir otomatis terautentikasi agar bisa menggunakan biometrik / kunci layar
+    if (!Auth::check() && $manifest->driver) {
+        $driverUser = $manifest->driver->user;
+        if (!$driverUser && $manifest->driver->phone_number) {
+            $cleanPhone = preg_replace('/\D/', '', $manifest->driver->phone_number);
+            $email = ($cleanPhone ?: 'driver'.$manifest->driver->id) . '@supir.cargo';
+            $driverUser = User::where('email', $email)->orWhere('phone', $manifest->driver->phone_number)->first();
+            if (!$driverUser) {
+                $driverUser = User::create([
+                    'name' => $manifest->driver->name,
+                    'email' => $email,
+                    'phone' => $manifest->driver->phone_number,
+                    'password' => Hash::make(Str::random(16)),
+                    'role' => 'DRIVER_PICKUP',
+                    'expedition_id' => $manifest->expedition_id,
+                ]);
+            }
+            $manifest->driver->update(['user_id' => $driverUser->id]);
+        }
+        if ($driverUser) {
+            Auth::login($driverUser, remember: true);
+        }
+    }
 
     // Group kolis by sender for pickup view
     $pickups = $manifest->kolis->groupBy(function ($koli) {
@@ -379,10 +409,34 @@ Route::get('/supir/lintas', function (Request $request) {
         abort(404, 'Tautan surat jalan tidak valid atau belum ada manifest aktif.');
     }
 
-    $manifest = Manifest::with(['driver', 'kolis.shipment.sender'])
+    $manifest = Manifest::with(['driver.user', 'kolis.shipment.sender'])
         ->where('magic_link_token', $token)
         ->where('manifest_type', 'DELIVERY')
         ->firstOrFail();
+
+    // Pastikan supir otomatis terautentikasi agar bisa menggunakan biometrik / kunci layar
+    if (!Auth::check() && $manifest->driver) {
+        $driverUser = $manifest->driver->user;
+        if (!$driverUser && $manifest->driver->phone_number) {
+            $cleanPhone = preg_replace('/\D/', '', $manifest->driver->phone_number);
+            $email = ($cleanPhone ?: 'driver'.$manifest->driver->id) . '@supir.cargo';
+            $driverUser = User::where('email', $email)->orWhere('phone', $manifest->driver->phone_number)->first();
+            if (!$driverUser) {
+                $driverUser = User::create([
+                    'name' => $manifest->driver->name,
+                    'email' => $email,
+                    'phone' => $manifest->driver->phone_number,
+                    'password' => Hash::make(Str::random(16)),
+                    'role' => 'DRIVER_LINTAS',
+                    'expedition_id' => $manifest->expedition_id,
+                ]);
+            }
+            $manifest->driver->update(['user_id' => $driverUser->id]);
+        }
+        if ($driverUser) {
+            Auth::login($driverUser, remember: true);
+        }
+    }
 
     $deliveries = $manifest->kolis->groupBy('shipment_id')->map(function ($kolis) {
         $shipment = $kolis->first()->shipment;

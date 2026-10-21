@@ -55,6 +55,19 @@ const handleRemoveBiometric = async () => {
     }
 };
 
+const formatRole = (role) => {
+    if (role === 'DRIVER_PICKUP') return 'Supir Penjemputan (Lokal)';
+    if (role === 'DRIVER_LINTAS') return 'Supir Pengantaran (Lintas Kota)';
+    if (role === 'GUDANG') return 'Petugas Gudang / Checker';
+    if (role === 'ADMIN') return 'Admin Ekspedisi';
+    if (role === 'SUPERADMIN') return 'Super Admin';
+    return role || 'Personil Lapangan';
+};
+
+const isDriver = (role) => {
+    return role === 'DRIVER_PICKUP' || role === 'DRIVER_LINTAS';
+};
+
 const submit = () => {
     form.post(route('login'), {
         onFinish: () => form.reset('password'),
@@ -133,24 +146,32 @@ const quickLogin = (email) => {
 
                 <!-- KARTU MASUK CEPAT KUNCI LAYAR / SIDIK JARI -->
                 <div v-if="registeredUser" class="biometric-card">
-                    <div class="biometric-avatar">
-                        <i class="ri-fingerprint-line"></i>
+                    <div class="biometric-avatar" :class="{ 'biometric-avatar-driver': isDriver(registeredUser.role) }">
+                        <i v-if="isDriver(registeredUser.role)" class="ri-steering-2-line"></i>
+                        <i v-else class="ri-fingerprint-line"></i>
                     </div>
                     <div class="biometric-info">
-                        <span class="biometric-badge"><i class="ri-shield-check-fill"></i> Kunci Layar HP Aktif</span>
+                        <span class="biometric-badge">
+                            <i class="ri-shield-check-fill"></i>
+                            {{ isDriver(registeredUser.role) ? 'Kunci Layar Supir Aktif' : 'Kunci Layar HP Aktif' }}
+                        </span>
                         <h4 class="biometric-user-name">{{ registeredUser.name }}</h4>
-                        <p class="biometric-user-role">{{ registeredUser.role || 'Staf Lapangan' }} • {{ registeredUser.email }}</p>
+                        <p class="biometric-user-role">
+                            <span class="font-semibold">{{ formatRole(registeredUser.role) }}</span>
+                            <span class="opacity-60"> • {{ registeredUser.email }}</span>
+                        </p>
                     </div>
                     <button
                         type="button"
                         class="btn-biometric-unlock"
                         :disabled="isAuthenticating"
                         @click="handleBiometricLogin"
+                        :title="isDriver(registeredUser.role) ? 'Buka Tugas Supir' : 'Buka Sistem'"
                     >
                         <i v-if="isAuthenticating" class="ri-loader-4-line spin"></i>
                         <template v-else>
                             <i class="ri-lock-unlock-line"></i>
-                            <span>Buka</span>
+                            <span>{{ isDriver(registeredUser.role) ? 'Buka Tugas' : 'Buka' }}</span>
                         </template>
                     </button>
                     <button
@@ -246,7 +267,7 @@ const quickLogin = (email) => {
                 <div class="driver-register-card">
                     <div class="driver-register-info">
                         <span class="driver-register-title">Supir Armada Baru?</span>
-                        <span class="driver-register-desc">Daftar mandiri & bawa muatan</span>
+                        <span class="driver-register-desc">Daftar mandiri & aktifkan kunci layar HP</span>
                     </div>
                     <Link :href="route('register.driver')" class="btn-driver-register">
                         <i class="ri-steering-2-line"></i> Daftar Supir
@@ -586,6 +607,11 @@ const quickLogin = (email) => {
     font-size: 24px;
     box-shadow: 0 4px 10px rgba(var(--color-primary), 0.35);
     flex-shrink: 0;
+}
+.biometric-avatar-driver {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: rgb(var(--color-primary));
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.35);
 }
 .biometric-info {
     flex: 1;

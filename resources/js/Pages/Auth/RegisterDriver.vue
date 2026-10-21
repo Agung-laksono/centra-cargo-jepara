@@ -187,6 +187,14 @@ const submit = () => {
                         </div>
                     </div>
 
+                    <!-- Info Kunci Layar HP / Biometrik -->
+                    <div class="p-3 rounded-xl bg-primary/10 border border-primary/20 text-xs text-gray-300 flex items-start gap-2.5">
+                        <i class="ri-fingerprint-line text-primary text-base shrink-0 mt-0.5"></i>
+                        <span class="leading-relaxed">
+                            <b class="text-white">Login Bebas Sandi:</b> Setelah mendaftar, Anda dapat langsung menghubungkan Sidik Jari / PIN HP agar masuk tugas berikutnya instan tanpa ketik sandi.
+                        </span>
+                    </div>
+
                     <!-- Tombol Submit -->
                     <button
                         type="submit"

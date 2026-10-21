@@ -42,6 +42,18 @@ const expeditionName = computed(() => {
     return props.manifest?.expedition_name || currentUser.value?.expedition?.name || page.props.company?.name || 'Ekspedisi Kemitraan';
 });
 
+const activeExpeditionName = computed(() => {
+    return props.manifest?.expedition_name || currentUser.value?.expedition?.name || page.props.company?.name || null;
+});
+
+const activePartnerships = computed(() => {
+    return partnerships.value.filter(p => p.status === 'ACTIVE' || !p.status);
+});
+
+const isMultiExpedition = computed(() => {
+    return activePartnerships.value.length > 1;
+});
+
 const roleLabel = computed(() => {
     const role = props.driverRole || currentUser.value?.role;
     if (role === 'DRIVER_PICKUP') return 'Supir Penjemputan (Lokal)';
@@ -140,9 +152,13 @@ watch(() => props.show, (isOpen) => {
 
 const handleActivateBiometric = async () => {
     try {
-        if (!currentUser.value) return;
+        if (!currentUser.value) {
+            biometricMsg.value = { type: 'error', text: 'Sesi supir belum terhubung. Silakan login atau buka dari link tugas resmi.' };
+            setTimeout(() => { biometricMsg.value = null; }, 4000);
+            return;
+        }
         await registerBiometricDevice(currentUser.value);
-        biometricMsg.value = { type: 'success', text: 'Kunci layar HP berhasil dihubungkan!' };
+        biometricMsg.value = { type: 'success', text: 'Kunci layar HP berhasil dihubungkan! Masuk berikutnya tanpa sandi.' };
         setTimeout(() => { biometricMsg.value = null; }, 3500);
     } catch (e) {
         if (e.message && !e.message.includes('dibatalkan')) {
@@ -227,9 +243,31 @@ const handleLogout = () => {
                                     <i class="ri-steering-2-line"></i> {{ roleLabel }}
                                 </span>
                                 <h4 class="font-bold text-base text-gray-900 truncate leading-snug">{{ driverName }}</h4>
-                                <p class="text-xs text-gray-500 truncate mt-0.5 flex items-center gap-1">
+                                
+                                <!-- Tampilan Kemitraan Ekspedisi (Mendukung Multi-Ekspedisi) -->
+                                <div v-if="isMultiExpedition" class="mt-1 space-y-1">
+                                    <div class="flex items-center gap-1 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                                        <i class="ri-community-line text-primary"></i>
+                                        <span>{{ activePartnerships.length }} Mitra Ekspedisi:</span>
+                                    </div>
+                                    <div class="flex flex-wrap gap-1">
+                                        <span 
+                                            v-for="p in activePartnerships" 
+                                            :key="p.id"
+                                            class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg border transition-all"
+                                            :class="p.name === activeExpeditionName 
+                                                ? 'bg-primary/10 text-primary border-primary/40 shadow-xs' 
+                                                : 'bg-gray-100 text-gray-600 border-gray-200'"
+                                        >
+                                            <span class="w-1.5 h-1.5 rounded-full shrink-0" :style="{ backgroundColor: p.theme_color || '#8B5A2B' }"></span>
+                                            <span class="truncate max-w-[110px]">{{ p.name }}</span>
+                                            <span v-if="p.name === activeExpeditionName" class="text-[8px] font-black uppercase text-primary ml-0.5">• Aktif</span>
+                                        </span>
+                                    </div>
+                                </div>
+                                <p v-else class="text-xs text-gray-500 truncate mt-0.5 flex items-center gap-1">
                                     <i class="ri-community-line text-gray-400"></i>
-                                    <span>{{ expeditionName }}</span>
+                                    <span>{{ activeExpeditionName || expeditionName }}</span>
                                 </p>
                             </div>
                         </div>
@@ -259,6 +297,57 @@ const handleLogout = () => {
                                 </div>
                                 <span class="font-black font-mono text-gray-900">#{{ manifest.id }}</span>
                             </div>
+                        </div>
+
+                        <!-- Kunci Layar HP / Biometrik Section -->
+                        <div v-if="isBiometricSupported" class="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm space-y-3">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2.5">
+                                    <div class="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100">
+                                        <i class="ri-fingerprint-line text-lg"></i>
+                                    </div>
+                                    <div>
+                                        <h5 class="font-extrabold text-xs text-gray-900">Kunci Layar HP (Biometrik)</h5>
+                                        <p class="text-[10px] text-gray-500">Masuk instan dengan sidik jari / PIN HP</p>
+                                    </div>
+                                </div>
+
+                                <span 
+                                    class="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1"
+                                    :class="biometricRegisteredUser ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'"
+                                >
+                                    <i :class="biometricRegisteredUser ? 'ri-shield-check-fill' : 'ri-time-line'"></i>
+                                    {{ biometricRegisteredUser ? 'Aktif di HP Ini' : 'Belum Aktif' }}
+                                </span>
+                            </div>
+
+                            <!-- Alert message -->
+                            <div v-if="biometricMsg" class="p-2.5 rounded-xl text-xs font-semibold flex items-center gap-2" :class="biometricMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'">
+                                <i :class="biometricMsg.type === 'success' ? 'ri-checkbox-circle-fill' : 'ri-error-warning-fill'"></i>
+                                <span>{{ biometricMsg.text }}</span>
+                            </div>
+
+                            <button
+                                v-if="!biometricRegisteredUser"
+                                type="button"
+                                @click="handleActivateBiometric"
+                                :disabled="isBiometricRegistering"
+                                class="w-full py-2.5 px-3 rounded-xl bg-primary hover:bg-primaryDark text-white font-bold text-xs flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-md shadow-primary/20 active:scale-[0.98]"
+                            >
+                                <i v-if="isBiometricRegistering" class="ri-loader-4-line animate-spin"></i>
+                                <i v-else class="ri-shield-keyhole-line text-sm"></i>
+                                <span>{{ isBiometricRegistering ? 'Memproses...' : 'Hubungkan Kunci Layar HP Ini' }}</span>
+                            </button>
+
+                            <button
+                                v-else
+                                type="button"
+                                @click="handleRemoveBiometric"
+                                class="w-full py-2 px-3 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 font-semibold text-xs flex items-center justify-center gap-1.5 transition border border-red-200"
+                            >
+                                <i class="ri-delete-bin-line"></i>
+                                <span>Lepas Kunci Layar</span>
+                            </button>
                         </div>
 
                         <!-- SEKSI KEMITRAAN EKSPEDISI (HANDSHAKE) -->
@@ -370,56 +459,6 @@ const handleLogout = () => {
                                     <span v-else>Sambungkan</span>
                                 </button>
                             </div>
-                        </div>
-
-                        <!-- Kunci Layar HP / Biometrik Section -->
-                        <div v-if="isBiometricSupported" class="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm space-y-3">
-                            <div class="flex items-center justify-between">
-                                <div class="flex items-center gap-2">
-                                    <div class="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                                        <i class="ri-fingerprint-line text-base"></i>
-                                    </div>
-                                    <div>
-                                        <h5 class="font-bold text-xs text-gray-900">Kunci Layar HP (Biometrik)</h5>
-                                        <p class="text-[10px] text-gray-500">Masuk instan dengan sidik jari / pola</p>
-                                    </div>
-                                </div>
-
-                                <span 
-                                    class="text-[10px] font-extrabold px-2 py-0.5 rounded-full"
-                                    :class="biometricRegisteredUser ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'"
-                                >
-                                    {{ biometricRegisteredUser ? 'Aktif' : 'Belum' }}
-                                </span>
-                            </div>
-
-                            <!-- Alert message -->
-                            <div v-if="biometricMsg" class="p-2.5 rounded-xl text-xs font-semibold flex items-center gap-2" :class="biometricMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'">
-                                <i :class="biometricMsg.type === 'success' ? 'ri-checkbox-circle-fill' : 'ri-error-warning-fill'"></i>
-                                <span>{{ biometricMsg.text }}</span>
-                            </div>
-
-                            <button
-                                v-if="!biometricRegisteredUser"
-                                type="button"
-                                @click="handleActivateBiometric"
-                                :disabled="isBiometricRegistering"
-                                class="w-full py-2.5 px-3 rounded-xl bg-primary hover:bg-primaryDark text-white font-bold text-xs flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-sm"
-                            >
-                                <i v-if="isBiometricRegistering" class="ri-loader-4-line animate-spin"></i>
-                                <i v-else class="ri-shield-keyhole-line text-sm"></i>
-                                <span>{{ isBiometricRegistering ? 'Memproses...' : 'Hubungkan Kunci Layar HP Ini' }}</span>
-                            </button>
-
-                            <button
-                                v-else
-                                type="button"
-                                @click="handleRemoveBiometric"
-                                class="w-full py-2 px-3 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 font-semibold text-xs flex items-center justify-center gap-1.5 transition border border-red-200"
-                            >
-                                <i class="ri-delete-bin-line"></i>
-                                <span>Lepas Kunci Layar</span>
-                            </button>
                         </div>
 
                         <!-- Konfirmasi Logout -->

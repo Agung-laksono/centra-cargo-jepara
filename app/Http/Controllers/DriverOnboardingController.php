@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Driver;
 use App\Models\DriverExpedition;
 use App\Models\Expedition;
+use App\Models\Manifest;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -264,6 +265,141 @@ class DriverOnboardingController extends Controller
                 'name' => $expedition->name,
                 'phone' => $expedition->phone,
                 'theme_color' => $expedition->theme_color,
+            ],
+        ]);
+    }
+
+    /**
+     * Handshake Manifest: Supir mengambil / mengklaim surat jalan (manifest) via scan QR atau kode.
+     */
+    public function claimManifest(Request $request)
+    {
+        $request->validate([
+            'token' => 'required|string',
+        ]);
+
+        $rawToken = trim($request->token);
+        if (str_contains($rawToken, 'token=')) {
+            $parsedUrl = parse_url($rawToken);
+            parse_str($parsedUrl['query'] ?? '', $query);
+            $rawToken = $query['token'] ?? $rawToken;
+        }
+
+        $user = Auth::user();
+
+        // Cari manifest berdasarkan token asli, ID numerik, atau prefix MNF- / PICKUP-
+        $cleanId = preg_replace('/\D/', '', $rawToken);
+        $manifest = Manifest::with(['expedition', 'driver.user'])
+            ->where('magic_link_token', $rawToken)
+            ->orWhere('id', is_numeric($rawToken) ? (int)$rawToken : ($cleanId ? (int)$cleanId : -1))
+            ->first();
+
+        // Jika belum ketemu, cek apakah supir men-scan barcode koli atau nomor resi yang tertera di surat jalan
+        if (!$manifest) {
+            $koli = \App\Models\Koli::where('barcode_id', $rawToken)
+                ->orWhereHas('shipment', function ($q) use ($rawToken) {
+                    $q->where('tracking_number', $rawToken);
+                })->first();
+
+            if ($koli) {
+                $manifest = $koli->manifests()
+                    ->with(['expedition', 'driver.user'])
+                    ->whereNotIn('status', ['SELESAI', 'COMPLETED', 'CANCELLED'])
+                    ->latest('id')
+                    ->first();
+            }
+        }
+
+        if (!$manifest) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Surat Jalan (Manifest) tidak ditemukan. Pastikan QR code atau kode yang di-scan sesuai.',
+            ], 404);
+        }
+
+        // Jika user belum login, coba hubungkan dari supir yang ada pada manifest
+        if (!$user && $manifest->driver) {
+            $user = $manifest->driver->user;
+            if (!$user && $manifest->driver->phone_number) {
+                $cleanPhone = preg_replace('/\D/', '', $manifest->driver->phone_number);
+                $email = ($cleanPhone ?: 'driver'.$manifest->driver->id) . '@supir.cargo';
+                $user = User::firstOrCreate(
+                    ['email' => $email],
+                    [
+                        'name' => $manifest->driver->name,
+                        'phone' => $manifest->driver->phone_number,
+                        'password' => Hash::make(Str::random(16)),
+                        'role' => $manifest->manifest_type === 'PICKUP' ? 'DRIVER_PICKUP' : 'DRIVER_LINTAS',
+                        'expedition_id' => $manifest->expedition_id,
+                    ]
+                );
+                $manifest->driver->update(['user_id' => $user->id]);
+            }
+            if ($user) {
+                Auth::login($user, remember: true);
+            }
+        }
+
+        if (!$user) {
+            return response()->json(['status' => 'error', 'message' => 'Sesi tidak sah. Silakan masuk terlebih dahulu.'], 401);
+        }
+
+        $driver = $this->resolveDriver($user);
+        if (!$driver) {
+            $driver = Driver::create([
+                'name' => $user->name,
+                'phone_number' => $user->phone,
+                'vehicle_name' => 'Armada ' . $user->name,
+                'user_id' => $user->id,
+            ]);
+        }
+
+        if ($manifest->status === 'SELESAI' || $manifest->status === 'COMPLETED' || $manifest->status === 'CANCELLED') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Surat Jalan #' . $manifest->id . ' sudah selesai atau dibatalkan.',
+            ], 422);
+        }
+
+        // Pasangkan supir dengan manifest ini (Handshake!)
+        $manifest->driver_id = $driver->id;
+        if (in_array($manifest->status, ['DRAFT', 'PREPARING', 'PENDING', 'STANDBY'])) {
+            $manifest->status = 'IN_TRANSIT';
+        }
+        $manifest->save();
+
+        // Pastikan relasi kemitraan supir dengan ekspedisi pemilik surat jalan ini otomatis terhubung/aktif
+        if ($manifest->expedition_id) {
+            DriverExpedition::firstOrCreate(
+                [
+                    'driver_id' => $driver->id,
+                    'expedition_id' => $manifest->expedition_id,
+                ],
+                [
+                    'user_id' => $user->id,
+                    'role' => $manifest->manifest_type === 'PICKUP' ? 'DRIVER_PICKUP' : 'DRIVER_LINTAS',
+                    'status' => 'ACTIVE',
+                    'partnered_at' => now(),
+                ]
+            );
+        }
+
+        $redirectUrl = $manifest->manifest_type === 'PICKUP' 
+            ? '/supir/pickup?token=' . $manifest->magic_link_token
+            : '/supir/lintas?token=' . $manifest->magic_link_token;
+
+        $expeditionName = $manifest->expedition?->name ?? 'Gudang Ekspedisi';
+
+        return response()->json([
+            'status' => 'success',
+            'message' => "Surat Jalan #{$manifest->id} berhasil diambil dari {$expeditionName}! Membuka daftar muatan...",
+            'redirect_url' => $redirectUrl,
+            'manifest' => [
+                'id' => $manifest->id,
+                'status' => $manifest->status,
+                'manifest_type' => $manifest->manifest_type,
+                'expedition_name' => $expeditionName,
+                'token' => $manifest->magic_link_token,
             ],
         ]);
     }

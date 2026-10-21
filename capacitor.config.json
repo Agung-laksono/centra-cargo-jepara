@@ -8,7 +8,7 @@
   },
   "plugins": {
     "Fullscreen": {
-      "activateOnLoad": true
+      "activateOnLoad": false
     }
   }
 }

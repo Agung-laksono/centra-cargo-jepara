@@ -199,11 +199,6 @@ createInertiaApp({
         // Terapkan warna tema saat pertama kali dirender
         syncThemeForPage(props.initialPage);
 
-        // Aktifkan mode immersive (fullscreen murni tanpa top/bottom bar)
-        try {
-            Fullscreen.activateImmersiveMode().catch(() => {});
-        } catch (e) {}
-
         return createApp({ render: () => h(App, props) })
             .use(plugin)
             .use(ZiggyVue)

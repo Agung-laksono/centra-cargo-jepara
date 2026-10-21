@@ -1,11 +1,12 @@
 <script setup>
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import Sortable from 'sortablejs';
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import BarcodeScanner from '@/Components/BarcodeScanner.vue';
 import localforage from 'localforage';
 import axios from 'axios';
 import { useLocationTracking } from '@/Composables/useLocationTracking';
+import { useBiometricAuth } from '@/Composables/useBiometricAuth';
 import { Fullscreen } from '@boengli/capacitor-fullscreen';
 import { StatusBar } from '@capacitor/status-bar';
 import DriverProfileModal from '@/Components/DriverProfileModal.vue';
@@ -17,7 +18,12 @@ const props = defineProps({
 
 const isProfileModalOpen = ref(false);
 
-// Gunakan props jika ada, atau fallback ke simulasi jika sedang dipreview
+// Identifikasi status Standby (belum ada manifest aktif atau muatan kosong)
+const isStandby = computed(() => {
+    return props.manifest?.status === 'STANDBY' || !props.manifest?.id || (!props.deliveries || props.deliveries.length === 0);
+});
+
+// Gunakan props jika ada, atau kembalikan array kosong jika standby
 const getInitialPengantaran = () => {
     if (props.deliveries && props.deliveries.length > 0) {
         return props.deliveries.map(d => ({
@@ -36,49 +42,69 @@ const getInitialPengantaran = () => {
             selesai: d.status === 'Selesai',
         }));
     }
-    // Data simulasi daftar pengantaran
-    return [
-        {
-            id: 1,
-            titik: 'Titik 1',
-            resi: 'JPR-2610-001',
-            penerima: 'Bpk. Budi Santoso',
-            alamat: 'Jl. Mawar No. 10, RT 01/RW 02, Kebayoran Baru, Jakarta Selatan.',
-            alamatLengkap: 'Jl. Mawar No. 10, RT 01/RW 02, Kebayoran Baru, Jakarta Selatan.',
-            koli: 3,
-            kolis: [
-                { id: 101, barcode: 'JPR-2610-001-1', deskripsi: 'Meja Makan Jati', scanned: false },
-                { id: 102, barcode: 'JPR-2610-001-2', deskripsi: 'Kursi Makan (Set 1)', scanned: false },
-                { id: 103, barcode: 'JPR-2610-001-3', deskripsi: 'Kaca Meja', scanned: false }
-            ],
-            deskripsi: 'Meja Makan Jati (Set)',
-            isCod: true,
-            tagihanCod: 3500000,
-            selesai: false
-        },
-        {
-            id: 2,
-            titik: 'Titik 2',
-            resi: 'JPR-2610-002',
-            penerima: 'Ibu Ratna',
-            alamat: 'Apartemen Sudirman Tower, Lantai 15 Unit C, Jakarta Pusat.',
-            alamatLengkap: 'Apartemen Sudirman Tower, Lantai 15 Unit C, Jakarta Pusat.',
-            koli: 1,
-            kolis: [
-                { id: 104, barcode: 'JPR-2610-002-1', deskripsi: 'Kursi Teras', scanned: false }
-            ],
-            deskripsi: 'Kursi Teras',
-            isCod: false,
-            tagihanCod: 0,
-            selesai: false
-        }
-    ];
+    return [];
 };
 
 const pengantaranData = ref(getInitialPengantaran());
 const isReordering = ref(false);
 const sortableContainer = ref(null);
 let sortableInstance = null;
+
+// Fitur Handshake Manifest & Supir
+const isManifestScannerOpen = ref(false);
+const showManualManifestInput = ref(false);
+const manualManifestCode = ref('');
+const isClaimingManifest = ref(false);
+const claimManifestError = ref('');
+const claimSuccessMessage = ref('');
+
+const openManifestScanner = () => {
+    claimManifestError.value = '';
+    isManifestScannerOpen.value = true;
+};
+
+const handleClaimManifest = async (scannedCode) => {
+    const code = (scannedCode || manualManifestCode.value).trim();
+    if (!code) return;
+
+    try {
+        isClaimingManifest.value = true;
+        claimManifestError.value = '';
+
+        const res = await axios.post('/api/driver/claim-manifest', {
+            token: code,
+        });
+
+        if (res.data.status === 'success') {
+            if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+            claimSuccessMessage.value = res.data.message || 'Surat Jalan berhasil diambil!';
+            isManifestScannerOpen.value = false;
+            showManualManifestInput.value = false;
+            manualManifestCode.value = '';
+            
+            setTimeout(() => {
+                if (res.data.redirect_url) {
+                    window.location.href = res.data.redirect_url;
+                } else {
+                    window.location.reload();
+                }
+            }, 800);
+        } else {
+            claimManifestError.value = res.data.message || 'Gagal mengambil surat jalan.';
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        }
+    } catch (err) {
+        claimManifestError.value = err.response?.data?.message || err.message || 'Kode Surat Jalan tidak valid atau tidak cocok.';
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    } finally {
+        isClaimingManifest.value = false;
+    }
+};
+
+const onManifestQrScanned = (scannedText) => {
+    isManifestScannerOpen.value = false;
+    handleClaimManifest(scannedText);
+};
 
 const moveUp = (index) => {
     if (index > 0) {
@@ -97,8 +123,9 @@ const moveDown = (index) => {
 };
 
 const activeManifest = computed(() => props.manifest || {
-    id: 'SIMULASI-001',
-    driver_name: 'Supir Simulasi',
+    id: null,
+    status: 'STANDBY',
+    driver_name: page.props.auth?.user?.name || 'Supir Lintas',
 });
 
 const getWaLink = (item) => {
@@ -114,8 +141,8 @@ const getMapsLink = (item) => {
     return `https://www.google.com/maps/search/?api=1&query=${query}`;
 };
 
-// Mulai lacak lokasi supir otomatis
-const { isTracking, hasSynced, lastSyncTime, trackingError } = useLocationTracking(activeManifest.value.token);
+// Mulai lacak lokasi supir otomatis jika ada token manifest
+const { isTracking, hasSynced, lastSyncTime, trackingError } = useLocationTracking(activeManifest.value?.token);
 
 const isSticky = ref(false);
 
@@ -128,24 +155,27 @@ const DB_STORE_KEY = 'driver_deliveries';
 const DB_QUEUE_KEY = 'sync_queue';
 
 const initializeOfflineDB = async () => {
+    if (isStandby.value) {
+        pengantaranData.value = [];
+        return;
+    }
+
     const queue = await localforage.getItem(DB_QUEUE_KEY) || [];
     const isLocalClean = queue.length === 0;
 
     if (navigator.onLine && isLocalClean && props.deliveries && props.deliveries.length > 0) {
-        // Jika online dan antrean sinkronisasi kosong, prioritaskan data baru dari server
         pengantaranData.value = getInitialPengantaran();
         await localforage.setItem(DB_STORE_KEY, pengantaranData.value);
     } else {
-        // Jika offline atau ada antrean, prioritaskan data lokal di HP
         const localData = await localforage.getItem(DB_STORE_KEY);
-        if (localData) {
+        if (localData && Array.isArray(localData) && localData.length > 0) {
             pengantaranData.value = localData;
         } else {
+            pengantaranData.value = getInitialPengantaran();
             await localforage.setItem(DB_STORE_KEY, pengantaranData.value);
         }
     }
     
-    // Coba sinkronisasi jika ada antrean
     syncToServer();
 };
 
@@ -191,14 +221,63 @@ const syncToServer = async () => {
     await localforage.setItem(DB_QUEUE_KEY, failedQueue);
 };
 
+const page = usePage();
+const {
+    isSupported: isBiometricSupported,
+    isRegistering: isBiometricRegistering,
+    registeredUser: biometricRegisteredUser,
+    checkSupport: checkBiometricSupport,
+    loadRegisteredDevice: loadBiometricDevice,
+    registerDevice: registerBiometricDevice,
+} = useBiometricAuth();
+
+const showBiometricPrompt = ref(false);
+const biometricSuccessToast = ref(null);
+
+const handleActivateBiometric = async () => {
+    try {
+        const user = page.props.auth?.user;
+        if (!user) {
+            alert('Sesi supir belum terhubung.');
+            return;
+        }
+        await registerBiometricDevice(user);
+        showBiometricPrompt.value = false;
+        biometricSuccessToast.value = 'Kunci layar HP berhasil dihubungkan! Tugas berikutnya bisa dibuka instan.';
+        setTimeout(() => {
+            biometricSuccessToast.value = null;
+        }, 4500);
+    } catch (e) {
+        if (e.message && !e.message.includes('dibatalkan')) {
+            alert(e.message || 'Gagal mengaktifkan kunci layar.');
+        }
+    }
+};
+
+const dismissBiometricPrompt = () => {
+    showBiometricPrompt.value = false;
+    sessionStorage.setItem('driver_biometric_dismissed', 'true');
+};
+
 onMounted(() => {
     window.addEventListener('online', syncToServer);
     initializeOfflineDB();
+
+    // Periksa dukungan kunci layar HP / Biometrik & tampilkan tawaran jika belum aktif
+    checkBiometricSupport().then(async (supported) => {
+        if (supported) {
+            const registered = await loadBiometricDevice();
+            const isDismissed = sessionStorage.getItem('driver_biometric_dismissed') === 'true';
+            if (!registered && !isDismissed && page.props.auth?.user) {
+                setTimeout(() => {
+                    showBiometricPrompt.value = true;
+                }, 1800);
+            }
+        }
+    });
     
-    // Auto-redirect jika dibuka di browser HP (bukan di dalam aplikasi)
+    // Konfigurasi sistem HP (Tampilkan status bar notifikasi atas)
     if (typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()) {
-        // Memunculkan kembali top & bottom bar sistem HP untuk halaman Supir
-        Fullscreen.deactivateImmersiveMode().catch(() => {});
         StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
         StatusBar.show().catch(() => {});
     } else if (typeof window !== 'undefined' && !window.Capacitor?.isNativePlatform?.()) {
@@ -254,9 +333,7 @@ onUnmounted(() => {
     window.removeEventListener('online', syncToServer);
     
     if (typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()) {
-        // Kembalikan ke mode Fullscreen saat keluar dari halaman Supir
-        Fullscreen.activateImmersiveMode().catch(() => {});
-        StatusBar.setOverlaysWebView({ overlay: true }).catch(() => {});
+        StatusBar.show().catch(() => {});
     }
 });
 
@@ -357,6 +434,12 @@ const tagihanTerkumpul = computed(() => {
         .reduce((sum, d) => sum + Number(d.tagihanCod || 0), 0);
 });
 
+// Progres Pengantaran Hari Ini (Opsi 2)
+const totalTitik = computed(() => pengantaranData.value.length);
+const selesaiTitik = computed(() => pengantaranData.value.filter(i => i.selesai).length);
+const sisaTitik = computed(() => totalTitik.value - selesaiTitik.value);
+const progressPersen = computed(() => totalTitik.value > 0 ? Math.round((selesaiTitik.value / totalTitik.value) * 100) : 0);
+
 const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -441,50 +524,163 @@ const formatRupiah = (angka) => {
 
                 <div class="flex items-center gap-2">
                     <div class="text-[9px] bg-white/20 px-2.5 py-1 rounded-full font-black tracking-widest uppercase border border-white/20 backdrop-blur-md">
-                        Tugas Lintas
+                        {{ isStandby ? 'Siap Muat' : 'Tugas Lintas' }}
                     </div>
+                    <!-- Tombol Scan Handshake Surat Jalan -->
+                    <button
+                        type="button"
+                        @click="openManifestScanner"
+                        class="flex items-center gap-1 bg-white/20 hover:bg-white/30 px-2.5 py-1.5 rounded-xl border border-white/30 text-white text-xs font-bold active:scale-95 transition-all shadow-sm"
+                        title="Ambil / Ganti Surat Jalan (Scan QR)"
+                    >
+                        <i class="ri-qr-scan-2-line text-amber-300"></i>
+                        <span class="hidden sm:inline">Ambil Manifest</span>
+                    </button>
                     <!-- Single Tombol Profil & Logout Supir -->
                     <button
                         type="button"
                         @click="isProfileModalOpen = true"
                         class="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 px-2.5 py-1.5 rounded-xl border border-white/30 text-white text-xs font-bold active:scale-95 transition-all shadow-sm"
-                        title="Profil Supir & Keluar Aplikasi"
+                        title="Profil Supir & Kunci Layar HP"
                     >
                         <i class="ri-user-star-fill text-amber-300"></i>
                         <span class="max-w-[100px] truncate">{{ activeManifest.driver_name }}</span>
+                        <i v-if="biometricRegisteredUser" class="ri-fingerprint-line text-emerald-300 text-xs ml-0.5" title="Kunci Layar HP Aktif"></i>
                     </button>
                 </div>
             </div>
             
-            <div class="relative z-10 flex flex-col items-start mt-2">
-                <p class="text-[10px] text-white/80 font-bold uppercase tracking-wider mb-0.5">Manifest Perjalanan</p>
-                <h2 class="text-2xl font-black tracking-tight drop-shadow-sm">MNF-{{ activeManifest.id }}</h2>
-                <div v-if="totalTagihanCod > 0" class="flex flex-wrap gap-1.5 mt-2">
-                    <div class="flex items-center gap-1.5 text-xs font-bold bg-green-500/20 text-green-100 px-2.5 py-1 rounded-lg border border-green-400/30 backdrop-blur-sm shadow-inner">
-                        <i class="ri-money-dollar-circle-fill text-green-300 text-sm"></i>
+            <div class="relative z-10 flex flex-col items-start mt-2.5">
+                <div class="flex items-center gap-1.5 text-[10px] text-white/80 font-bold uppercase tracking-wider mb-0.5">
+                    <i class="ri-map-pin-range-line text-amber-300"></i>
+                    <span>Tugas Pengantaran Hari Ini</span>
+                    <span v-if="activeManifest.id" class="text-white/40 font-mono text-[9px] ml-1">#{{ activeManifest.id }}</span>
+                </div>
+                
+                <h2 class="text-xl sm:text-2xl font-black tracking-tight drop-shadow-sm text-white">
+                    <template v-if="isStandby || totalTitik === 0">
+                        Standby (Siap Muat)
+                    </template>
+                    <template v-else-if="sisaTitik === 0">
+                        Semua Paket Terkirim! 🎉
+                    </template>
+                    <template v-else-if="selesaiTitik === 0">
+                        {{ totalTitik }} Titik Antar Siap Kirim
+                    </template>
+                    <template v-else>
+                        Sisa {{ sisaTitik }} dari {{ totalTitik }} Titik Antar
+                    </template>
+                </h2>
+
+                <div v-if="!isStandby && totalTitik > 0" class="flex flex-wrap items-center gap-1.5 mt-2">
+                    <div class="flex items-center gap-1.5 text-xs font-bold bg-white/15 px-2.5 py-1 rounded-lg backdrop-blur-sm border border-white/20 text-white shadow-inner">
+                        <i class="ri-checkbox-circle-fill text-emerald-300 text-xs"></i>
+                        <span>{{ selesaiTitik }}/{{ totalTitik }} Selesai ({{ progressPersen }}%)</span>
+                    </div>
+
+                    <div v-if="totalTagihanCod > 0" class="flex items-center gap-1.5 text-xs font-bold bg-emerald-500/25 text-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-400/30 backdrop-blur-sm shadow-inner">
+                        <i class="ri-money-dollar-circle-fill text-emerald-300 text-sm"></i>
                         <span>COD: {{ formatRupiah(tagihanTerkumpul) }} / {{ formatRupiah(totalTagihanCod) }}</span>
                     </div>
                 </div>
             </div>
         </header>
 
-        <!-- Progress Summary -->
-        <div class="relative z-40 transition-all duration-300" :class="[!isReordering ? 'sticky top-[35px]' : '', (isSticky && !isReordering) ? 'px-0 pt-0' : 'px-4 -mt-4']">
-            <div class="bg-white/95 shadow-lg flex justify-between items-center border border-gray-100/50 backdrop-blur-xl transition-all duration-300" :class="(isSticky && !isReordering) ? 'rounded-none py-2 px-3 shadow-sm' : 'rounded-xl py-3 px-3'">
-                <div class="flex-1 border-r border-gray-100 transition-all duration-300" :class="isSticky ? 'flex justify-center items-center gap-1.5' : 'text-center'">
-                    <p class="font-bold text-gray-400 uppercase tracking-widest transition-all duration-300 text-[9px] mb-0.5">Titik</p>
-                    <p class="font-black text-gray-800 transition-all duration-300" :class="isSticky ? 'text-sm' : 'text-lg'">{{ pengantaranData.length }}</p>
+        <!-- TAMPILAN 1: STATUS STANDBY / SIAP MUAT (Jika belum ada manifest aktif) -->
+        <div v-if="isStandby || pengantaranData.length === 0" class="px-4 py-8">
+            <div class="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 max-w-sm mx-auto text-center">
+                <!-- Icon Animasi Scan -->
+                <div class="relative w-24 h-24 mx-auto mb-4 flex items-center justify-center">
+                    <div class="absolute inset-0 rounded-full bg-primary/10 animate-ping opacity-30"></div>
+                    <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 border-2 border-dashed border-primary/40 flex items-center justify-center text-primary shadow-inner">
+                        <i class="ri-qr-scan-2-line text-4xl"></i>
+                    </div>
                 </div>
-                <div class="flex-1 border-r border-gray-100 transition-all duration-300" :class="isSticky ? 'flex justify-center items-center gap-1.5' : 'text-center'">
-                    <p class="font-bold text-gray-400 uppercase tracking-widest transition-all duration-300 text-[9px] mb-0.5">Koli</p>
-                    <p class="font-black text-gray-800 transition-all duration-300" :class="isSticky ? 'text-sm' : 'text-lg'">{{ pengantaranData.reduce((acc, curr) => acc + curr.koli, 0) }}</p>
+
+                <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-extrabold uppercase mb-2">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Armada Siap Bertugas
                 </div>
-                <div class="flex-1 transition-all duration-300" :class="isSticky ? 'flex justify-center items-center gap-1.5' : 'text-center'">
-                    <p class="font-bold text-gray-400 uppercase tracking-widest transition-all duration-300 text-[9px] mb-0.5">Selesai</p>
-                    <p class="font-black text-green-500 transition-all duration-300" :class="isSticky ? 'text-sm' : 'text-lg'">{{ pengantaranData.filter(i => i.selesai).length }} <span class="text-gray-300 transition-all duration-300 text-xs">/ {{ pengantaranData.length }}</span></p>
+
+                <h3 class="text-lg font-black text-gray-900 leading-snug">
+                    Belum Ada Muatan Aktif
+                </h3>
+                
+                <p class="text-xs text-gray-500 mt-1.5 leading-relaxed">
+                    Surat Jalan (Manifest) belum ditugaskan. Ambil surat jalan dari staf gudang dengan memindai kode QR.
+                </p>
+
+                <!-- Pesan Error / Sukses Handshake jika ada -->
+                <div v-if="claimManifestError" class="mt-4 p-3 rounded-xl bg-red-50 text-red-700 border border-red-200 text-xs font-semibold flex items-center gap-2 text-left">
+                    <i class="ri-error-warning-fill text-lg shrink-0 text-red-500"></i>
+                    <span>{{ claimManifestError }}</span>
+                </div>
+
+                <div v-if="claimSuccessMessage" class="mt-4 p-3 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold flex items-center gap-2 text-left">
+                    <i class="ri-checkbox-circle-fill text-lg shrink-0 text-emerald-500"></i>
+                    <span>{{ claimSuccessMessage }}</span>
+                </div>
+
+                <!-- Action CTA Buttons -->
+                <div class="mt-6 space-y-2.5">
+                    <button
+                        type="button"
+                        @click="openManifestScanner"
+                        :disabled="isClaimingManifest"
+                        class="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-primary to-primaryDark hover:opacity-95 text-white font-extrabold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-primary/25 active:scale-[0.98] transition-all disabled:opacity-50"
+                    >
+                        <i v-if="isClaimingManifest" class="ri-loader-4-line animate-spin text-lg"></i>
+                        <i v-else class="ri-qr-scan-2-line text-lg"></i>
+                        <span>{{ isClaimingManifest ? 'Memverifikasi...' : 'Scan QR Surat Jalan (Handshake)' }}</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        @click="showManualManifestInput = true"
+                        class="w-full py-2.5 px-4 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-700 font-bold text-xs flex items-center justify-center gap-2 border border-gray-200 active:scale-[0.98] transition-all"
+                    >
+                        <i class="ri-keyboard-line text-sm text-gray-400"></i>
+                        <span>Ketik Kode / ID Surat Jalan</span>
+                    </button>
+                </div>
+
+                <!-- Info Kemitraan Ekspedisi -->
+                <div class="mt-6 pt-4 border-t border-gray-100 flex items-center justify-between text-left">
+                    <div>
+                        <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Kemitraan Ekspedisi</p>
+                        <p class="text-xs font-extrabold text-gray-800">Bisa Ambil dari Semua Mitra</p>
+                    </div>
+                    <button 
+                        type="button"
+                        @click="isProfileModalOpen = true"
+                        class="text-xs font-bold text-primary hover:underline flex items-center gap-0.5"
+                    >
+                        <span>Cek Profil</span>
+                        <i class="ri-arrow-right-s-line"></i>
+                    </button>
                 </div>
             </div>
         </div>
+
+        <!-- TAMPILAN 2: DAFTAR PENGANTARAN AKTIF -->
+        <template v-else>
+            <!-- Progress Summary -->
+            <div class="relative z-40 transition-all duration-300" :class="[!isReordering ? 'sticky top-[35px]' : '', (isSticky && !isReordering) ? 'px-0 pt-0' : 'px-4 -mt-4']">
+                <div class="bg-white/95 shadow-lg flex justify-between items-center border border-gray-100/50 backdrop-blur-xl transition-all duration-300" :class="(isSticky && !isReordering) ? 'rounded-none py-2 px-3 shadow-sm' : 'rounded-xl py-3 px-3'">
+                    <div class="flex-1 border-r border-gray-100 transition-all duration-300" :class="isSticky ? 'flex justify-center items-center gap-1.5' : 'text-center'">
+                        <p class="font-bold text-gray-400 uppercase tracking-widest transition-all duration-300 text-[9px] mb-0.5">Titik</p>
+                        <p class="font-black text-gray-800 transition-all duration-300" :class="isSticky ? 'text-sm' : 'text-lg'">{{ pengantaranData.length }}</p>
+                    </div>
+                    <div class="flex-1 border-r border-gray-100 transition-all duration-300" :class="isSticky ? 'flex justify-center items-center gap-1.5' : 'text-center'">
+                        <p class="font-bold text-gray-400 uppercase tracking-widest transition-all duration-300 text-[9px] mb-0.5">Koli</p>
+                        <p class="font-black text-gray-800 transition-all duration-300" :class="isSticky ? 'text-sm' : 'text-lg'">{{ pengantaranData.reduce((acc, curr) => acc + curr.koli, 0) }}</p>
+                    </div>
+                    <div class="flex-1 transition-all duration-300" :class="isSticky ? 'flex justify-center items-center gap-1.5' : 'text-center'">
+                        <p class="font-bold text-gray-400 uppercase tracking-widest transition-all duration-300 text-[9px] mb-0.5">Selesai</p>
+                        <p class="font-black text-green-500 transition-all duration-300" :class="isSticky ? 'text-sm' : 'text-lg'">{{ pengantaranData.filter(i => i.selesai).length }} <span class="text-gray-300 transition-all duration-300 text-xs">/ {{ pengantaranData.length }}</span></p>
+                    </div>
+                </div>
+            </div>
 
         <!-- Destination List -->
         <div class="px-3 pt-3 pb-4 mt-1 space-y-3">
@@ -619,6 +815,7 @@ const formatRupiah = (angka) => {
                     </div>
             </transition-group>
         </div>
+        </template>
 
         <!-- Modal POD -->
         <Transition name="fade">
@@ -836,8 +1033,177 @@ const formatRupiah = (angka) => {
         @close="isProfileModalOpen = false"
     />
 
-    <!-- Latar Belakang Navigation Bar Android -->
-    <div class="fixed bottom-0 left-0 right-0 h-[40px] bg-primary z-[100]"></div>
+    <!-- Floating Banner Tawaran Kunci Layar HP / Biometrik Supir Lintas -->
+    <Transition
+        enter-active-class="transition-all duration-300 ease-out"
+        enter-from-class="translate-y-12 opacity-0"
+        enter-to-class="translate-y-0 opacity-100"
+        leave-active-class="transition-all duration-200 ease-in"
+        leave-from-class="translate-y-0 opacity-100"
+        leave-to-class="translate-y-12 opacity-0"
+    >
+        <div 
+            v-if="showBiometricPrompt && isBiometricSupported && !biometricRegisteredUser" 
+            class="fixed bottom-12 left-3 right-3 max-w-md mx-auto z-[95] bg-gradient-to-br from-slate-900 to-gray-900 text-white p-4 rounded-2xl shadow-2xl border border-primary/30 backdrop-blur-md"
+        >
+            <div class="flex items-start gap-3">
+                <div class="w-10 h-10 rounded-xl bg-primary/20 border border-primary/40 flex items-center justify-center shrink-0 text-primary shadow-inner">
+                    <i class="ri-fingerprint-line text-2xl"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">
+                            Login Kilat
+                        </span>
+                        <button @click="dismissBiometricPrompt" class="text-gray-400 hover:text-white p-1">
+                            <i class="ri-close-line text-lg"></i>
+                        </button>
+                    </div>
+                    <h4 class="font-extrabold text-sm text-white mt-1">Aktifkan Sidik Jari / Kunci Layar HP?</h4>
+                    <p class="text-xs text-gray-300 mt-0.5 leading-snug">
+                        Surat jalan & rute antar berikutnya cukup dibuka tempel sidik jari atau PIN tanpa repot ketik kata sandi.
+                    </p>
+                    <div class="mt-3 flex items-center gap-2">
+                        <button
+                            @click="handleActivateBiometric"
+                            :disabled="isBiometricRegistering"
+                            class="flex-1 bg-primary hover:bg-primaryDark text-white text-xs font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 transition active:scale-[0.98] shadow-md shadow-primary/25 disabled:opacity-50"
+                        >
+                            <i v-if="isBiometricRegistering" class="ri-loader-4-line animate-spin"></i>
+                            <i v-else class="ri-shield-keyhole-line text-sm"></i>
+                            <span>{{ isBiometricRegistering ? 'Memproses...' : 'Aktifkan di HP Ini' }}</span>
+                        </button>
+                        <button
+                            @click="dismissBiometricPrompt"
+                            class="text-xs text-gray-400 hover:text-white py-2.5 px-3 rounded-xl hover:bg-white/5 transition"
+                        >
+                            Nanti
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </Transition>
+
+    <!-- Toast Sukses Aktivasi Biometrik -->
+    <Transition
+        enter-active-class="transition duration-300 ease-out"
+        enter-from-class="opacity-0 -translate-y-4"
+        enter-to-class="opacity-100 translate-y-0"
+        leave-active-class="transition duration-200 ease-in"
+        leave-from-class="opacity-100 translate-y-0"
+        leave-to-class="opacity-0 -translate-y-4"
+    >
+        <div 
+            v-if="biometricSuccessToast" 
+            class="fixed top-14 left-4 right-4 max-w-md mx-auto z-[150] bg-emerald-600 text-white p-3.5 rounded-2xl shadow-xl flex items-center gap-3 border border-emerald-400"
+        >
+            <i class="ri-checkbox-circle-fill text-xl text-emerald-200 shrink-0"></i>
+            <p class="text-xs font-bold leading-snug">{{ biometricSuccessToast }}</p>
+        </div>
+    </Transition>
+
+    <!-- Modal Scanner QR Surat Jalan (Handshake Manifest) -->
+    <Teleport to="body">
+        <div v-if="isManifestScannerOpen" class="fixed inset-0 z-[250] bg-black flex flex-col">
+            <div class="p-4 bg-gray-900/95 text-white flex items-center justify-between z-10 border-b border-gray-800">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-primary/20 text-primary border border-primary/40 flex items-center justify-center font-bold">
+                        <i class="ri-qr-scan-2-line"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-extrabold text-sm text-white">Scan Surat Jalan (Manifest)</h4>
+                        <p class="text-[10px] text-gray-400">Arahkan kamera ke QR code pada surat jalan</p>
+                    </div>
+                </div>
+                <button @click="isManifestScannerOpen = false" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white flex items-center justify-center">
+                    <i class="ri-close-line text-xl"></i>
+                </button>
+            </div>
+            <div class="flex-1 relative bg-black flex flex-col justify-center">
+                <BarcodeScanner
+                    initial-mode="all"
+                    :show-close="false"
+                    @scan="onManifestQrScanned"
+                    @close="isManifestScannerOpen = false"
+                />
+            </div>
+        </div>
+    </Teleport>
+
+    <!-- Modal Input Kode Surat Jalan Manual -->
+    <Teleport to="body">
+        <div v-if="showManualManifestInput" class="fixed inset-0 z-[240] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" @click.self="showManualManifestInput = false">
+            <div class="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl border border-gray-100">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <div class="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold">
+                            <i class="ri-keyboard-line"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-extrabold text-sm text-gray-900">Ketik Kode Manifest</h4>
+                            <p class="text-[10px] text-gray-500">Contoh: MNF-001, #12, atau token</p>
+                        </div>
+                    </div>
+                    <button @click="showManualManifestInput = false" class="text-gray-400 hover:text-gray-600 p-1">
+                        <i class="ri-close-line text-lg"></i>
+                    </button>
+                </div>
+
+                <div class="mt-3">
+                    <input
+                        v-model="manualManifestCode"
+                        type="text"
+                        placeholder="Contoh: MNF-001 atau token..."
+                        class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm font-mono focus:border-primary focus:ring-1 focus:ring-primary uppercase"
+                        @keyup.enter="handleClaimManifest()"
+                    />
+                </div>
+
+                <div v-if="claimManifestError" class="mt-2.5 p-2 rounded-lg bg-red-50 text-red-700 text-xs font-semibold flex items-center gap-1.5">
+                    <i class="ri-error-warning-fill"></i>
+                    <span>{{ claimManifestError }}</span>
+                </div>
+
+                <div class="mt-4 flex gap-2">
+                    <button
+                        type="button"
+                        @click="showManualManifestInput = false"
+                        class="flex-1 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50"
+                    >
+                        Batal
+                    </button>
+                    <button
+                        type="button"
+                        @click="handleClaimManifest()"
+                        :disabled="isClaimingManifest || !manualManifestCode.trim()"
+                        class="flex-1 py-2.5 rounded-xl bg-primary hover:bg-primaryDark text-white text-xs font-bold shadow-md shadow-primary/20 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                    >
+                        <i v-if="isClaimingManifest" class="ri-loader-4-line animate-spin"></i>
+                        <span>{{ isClaimingManifest ? 'Memeriksa...' : 'Ambil Muatan' }}</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </Teleport>
+
+    <!-- Toast Sukses Ambil Manifest -->
+    <Transition
+        enter-active-class="transition duration-300 ease-out"
+        enter-from-class="opacity-0 -translate-y-4"
+        enter-to-class="opacity-100 translate-y-0"
+        leave-active-class="transition duration-200 ease-in"
+        leave-from-class="opacity-100 translate-y-0"
+        leave-to-class="opacity-0 -translate-y-4"
+    >
+        <div 
+            v-if="claimSuccessMessage" 
+            class="fixed top-14 left-4 right-4 max-w-md mx-auto z-[260] bg-emerald-600 text-white p-3.5 rounded-2xl shadow-xl flex items-center gap-3 border border-emerald-400"
+        >
+            <i class="ri-checkbox-circle-fill text-xl text-emerald-200 shrink-0"></i>
+            <p class="text-xs font-bold leading-snug">{{ claimSuccessMessage }}</p>
+        </div>
+    </Transition>
 </template>
 <style scoped>
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
