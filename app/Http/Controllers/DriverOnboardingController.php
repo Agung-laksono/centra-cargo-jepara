@@ -104,16 +104,16 @@ class DriverOnboardingController extends Controller
             'expedition_id' => $expedition?->id,
         ]);
 
-        // Buat relasi kemitraan jika mendaftar lewat pairing token ekspedisi
+        // Buat relasi kemitraan jika mendaftar lewat pairing token ekspedisi (Menunggu persetujuan gudang)
         if ($expedition) {
             DriverExpedition::create([
                 'driver_id' => $driver->id,
                 'user_id' => $user->id,
                 'expedition_id' => $expedition->id,
                 'role' => $user->role,
-                'status' => 'ACTIVE',
+                'status' => 'PENDING',
                 'handshake_code' => $expedition->partnership_token,
-                'partnered_at' => now(),
+                'partnered_at' => null,
             ]);
         }
 
@@ -123,7 +123,7 @@ class DriverOnboardingController extends Controller
         // Arahkan ke antarmuka operasional sesuai peran
         $redirectUrl = $user->role === 'DRIVER_PICKUP' ? '/supir/pickup' : '/supir/lintas';
 
-        return redirect($redirectUrl)->with('success', 'Pendaftaran mandiri berhasil! Selamat bertugas.');
+        return redirect($redirectUrl)->with('success', 'Pendaftaran mandiri berhasil! Permohonan kemitraan dikirim ke ' . ($expedition ? $expedition->name : 'pusat') . '.');
     }
 
     /**
@@ -142,7 +142,16 @@ class DriverOnboardingController extends Controller
         }
 
         $partnerships = $driver->partnerExpeditions()
-            ->select('expeditions.id', 'expeditions.name', 'expeditions.phone', 'expeditions.address', 'expeditions.theme_color', 'driver_expeditions.partnered_at', 'driver_expeditions.status')
+            ->select(
+                'expeditions.id',
+                'expeditions.name',
+                'expeditions.phone',
+                'expeditions.address',
+                'expeditions.theme_color',
+                'driver_expeditions.id as partnership_id',
+                'driver_expeditions.partnered_at',
+                'driver_expeditions.status'
+            )
             ->get();
 
         return response()->json([
@@ -172,7 +181,6 @@ class DriverOnboardingController extends Controller
 
         $driver = $this->resolveDriver($user);
         if (!$driver) {
-            // Jika akun belum punya record driver, buatkan otomatis
             $driver = Driver::create([
                 'name' => $user->name,
                 'phone_number' => $user->phone,
@@ -197,7 +205,7 @@ class DriverOnboardingController extends Controller
         if (!$expedition) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Kode atau QR Kemitraan tidak dikenali. Pastikan scan QR resmi ekspedisi terdaftar.',
+                'message' => 'Kode atau QR Kemitraan tidak cocok atau sudah kadaluarsa (di-reset). Silakan minta QR terbaru di gudang ekspedisi.',
             ], 404);
         }
 
@@ -207,38 +215,50 @@ class DriverOnboardingController extends Controller
             ->first();
 
         if ($existing) {
-            if ($existing->status !== 'ACTIVE') {
-                $existing->update(['status' => 'ACTIVE', 'partnered_at' => now()]);
+            if ($existing->status === 'ACTIVE') {
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Armada Anda sudah terdaftar sebagai mitra aktif di ' . $expedition->name . '.',
+                    'expedition' => $expedition,
+                ]);
             }
+
+            if ($existing->status === 'PENDING') {
+                return response()->json([
+                    'status' => 'pending',
+                    'message' => 'Permohonan kemitraan Anda masih menunggu persetujuan dari petugas gudang ' . $expedition->name . '.',
+                    'expedition' => $expedition,
+                ]);
+            }
+
+            // Jika status REJECTED atau INACTIVE, ajukan ulang ke status PENDING
+            $existing->update([
+                'status' => 'PENDING',
+                'handshake_code' => $expedition->partnership_token,
+                'updated_at' => now(),
+            ]);
+
             return response()->json([
-                'status' => 'success',
-                'message' => 'Armada Anda sudah terdaftar sebagai mitra aktif di ' . $expedition->name . '.',
+                'status' => 'pending',
+                'message' => 'Permohonan kemitraan berhasil diajukan ulang ke gudang ' . $expedition->name . '. Menunggu persetujuan staf.',
                 'expedition' => $expedition,
             ]);
         }
 
-        // Buat relasi kemitraan baru
+        // Buat relasi kemitraan baru dengan status PENDING
         DriverExpedition::create([
             'driver_id' => $driver->id,
             'user_id' => $user->id,
             'expedition_id' => $expedition->id,
             'role' => $user->role ?: 'DRIVER_LINTAS',
-            'status' => 'ACTIVE',
+            'status' => 'PENDING',
             'handshake_code' => $expedition->partnership_token,
-            'partnered_at' => now(),
+            'partnered_at' => null,
         ]);
 
-        // Jika supir belum memiliki ekspedisi default, set ke ekspedisi ini
-        if (!$user->expedition_id) {
-            $user->update(['expedition_id' => $expedition->id]);
-        }
-        if (!$driver->expedition_id) {
-            $driver->update(['expedition_id' => $expedition->id]);
-        }
-
         return response()->json([
-            'status' => 'success',
-            'message' => 'Handshake Kemitraan Berhasil! Anda resmi terhubung dengan armada ' . $expedition->name . '.',
+            'status' => 'pending',
+            'message' => 'Permohonan kemitraan terkirim ke ' . $expedition->name . '! Menunggu verifikasi dan persetujuan staf gudang.',
             'expedition' => [
                 'id' => $expedition->id,
                 'name' => $expedition->name,
@@ -249,7 +269,7 @@ class DriverOnboardingController extends Controller
     }
 
     /**
-     * Dapatkan data QR Kemitraan ekspedisi untuk ditampilkan di gudang/admin ekspedisi.
+     * Dapatkan data QR Kemitraan ekspedisi dan ringkasan permohonan supir.
      */
     public function getExpeditionQr(Request $request)
     {
@@ -258,10 +278,7 @@ class DriverOnboardingController extends Controller
             return response()->json(['status' => 'error'], 401);
         }
 
-        $expedition = $user->expedition;
-        if (!$expedition && $request->filled('expedition_id')) {
-            $expedition = Expedition::find($request->expedition_id);
-        }
+        $expedition = $this->resolveExpeditionForUser($user, $request->query('expedition_id'));
 
         if (!$expedition) {
             return response()->json(['status' => 'error', 'message' => 'Data ekspedisi tidak ditemukan.'], 404);
@@ -275,6 +292,9 @@ class DriverOnboardingController extends Controller
 
         $qrValue = route('register.driver', ['token' => $expedition->partnership_token]);
 
+        $pendingCount = DriverExpedition::where('expedition_id', $expedition->id)->where('status', 'PENDING')->count();
+        $activeCount = DriverExpedition::where('expedition_id', $expedition->id)->where('status', 'ACTIVE')->count();
+
         return response()->json([
             'status' => 'success',
             'expedition' => [
@@ -284,7 +304,197 @@ class DriverOnboardingController extends Controller
                 'partnership_token' => $expedition->partnership_token,
                 'qr_value' => $qrValue,
             ],
+            'stats' => [
+                'pending_count' => $pendingCount,
+                'active_count' => $activeCount,
+            ],
         ]);
+    }
+
+    /**
+     * Perbarui / Reset Kode QR Kemitraan ekspedisi.
+     * Kode lama tidak bisa lagi di-scan, sedangkan supir yang sudah terhubung tetap aman.
+     */
+    public function resetExpeditionQr(Request $request)
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json(['status' => 'error', 'message' => 'Sesi tidak sah.'], 401);
+        }
+
+        $expedition = $this->resolveExpeditionForUser($user, $request->input('expedition_id'));
+        if (!$expedition) {
+            return response()->json(['status' => 'error', 'message' => 'Ekspedisi tidak ditemukan.'], 404);
+        }
+
+        // Buat token baru yang unik
+        do {
+            $newToken = 'EXP-' . strtoupper(Str::random(8));
+        } while (Expedition::where('partnership_token', $newToken)->exists());
+
+        $expedition->partnership_token = $newToken;
+        $expedition->save();
+
+        $qrValue = route('register.driver', ['token' => $expedition->partnership_token]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Kode QR Kemitraan berhasil diperbarui! QR atau poster lama tidak dapat digunakan lagi oleh pendaftar baru.',
+            'expedition' => [
+                'id' => $expedition->id,
+                'name' => $expedition->name,
+                'phone' => $expedition->phone,
+                'partnership_token' => $expedition->partnership_token,
+                'qr_value' => $qrValue,
+            ],
+        ]);
+    }
+
+    /**
+     * Ambil daftar permohonan kemitraan supir (Pending, Aktif, Ditolak).
+     */
+    public function getPartnerRequests(Request $request)
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json(['status' => 'error', 'message' => 'Sesi tidak sah.'], 401);
+        }
+
+        $expedition = $this->resolveExpeditionForUser($user, $request->query('expedition_id'));
+        if (!$expedition) {
+            return response()->json(['status' => 'error', 'message' => 'Ekspedisi tidak ditemukan.'], 404);
+        }
+
+        $partnerships = DriverExpedition::where('expedition_id', $expedition->id)
+            ->with(['driver', 'user'])
+            ->orderByRaw("CASE WHEN status = 'PENDING' THEN 1 WHEN status = 'ACTIVE' THEN 2 WHEN status = 'INACTIVE' THEN 3 ELSE 4 END")
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function ($p) {
+                $driverName = $p->driver?->name ?? $p->user?->name ?? 'Supir Armada';
+                $phone = $p->driver?->phone_number ?? $p->user?->phone ?? '-';
+                $vehicle = $p->driver?->vehicle_name ?? 'Armada Standar';
+
+                // Format wa link jika ada nomor
+                $cleanPhone = preg_replace('/\D/', '', $phone);
+                if (str_starts_with($cleanPhone, '0')) {
+                    $cleanPhone = '62' . substr($cleanPhone, 1);
+                }
+                $waUrl = $cleanPhone ? "https://wa.me/{$cleanPhone}" : null;
+
+                return [
+                    'id' => $p->id,
+                    'driver_id' => $p->driver_id,
+                    'user_id' => $p->user_id,
+                    'name' => $driverName,
+                    'phone' => $phone,
+                    'wa_url' => $waUrl,
+                    'vehicle_name' => $vehicle,
+                    'role' => $p->role,
+                    'role_label' => $p->role === 'DRIVER_PICKUP' ? 'Supir Penjemputan (Lokal)' : 'Supir Pengantaran (Lintas Kota)',
+                    'status' => $p->status,
+                    'created_at' => $p->created_at ? $p->created_at->format('d/m/Y H:i') : '-',
+                    'created_at_human' => $p->created_at ? $p->created_at->diffForHumans() : '-',
+                    'partnered_at' => $p->partnered_at ? $p->partnered_at->format('d/m/Y H:i') : null,
+                ];
+            });
+
+        $pendingCount = $partnerships->where('status', 'PENDING')->count();
+        $activeCount = $partnerships->where('status', 'ACTIVE')->count();
+
+        return response()->json([
+            'status' => 'success',
+            'expedition' => [
+                'id' => $expedition->id,
+                'name' => $expedition->name,
+            ],
+            'requests' => $partnerships,
+            'stats' => [
+                'total' => $partnerships->count(),
+                'pending_count' => $pendingCount,
+                'active_count' => $activeCount,
+            ],
+        ]);
+    }
+
+    /**
+     * Setujui (Approve), Tolak (Reject), atau Nonaktifkan (Inactive) kemitraan supir.
+     */
+    public function updatePartnerStatus(Request $request, $id)
+    {
+        $request->validate([
+            'status' => 'required|in:ACTIVE,REJECTED,INACTIVE,PENDING',
+        ]);
+
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json(['status' => 'error', 'message' => 'Sesi tidak sah.'], 401);
+        }
+
+        $partnership = DriverExpedition::with(['driver', 'user', 'expedition'])->findOrFail($id);
+
+        // Pastikan user memiliki otoritas terhadap ekspedisi ini (Super Admin atau staf ekspedisi bersangkutan)
+        $isAuthorized = ($user->expedition_id === null) || ($user->expedition_id === $partnership->expedition_id);
+        if (!$isAuthorized) {
+            return response()->json(['status' => 'error', 'message' => 'Anda tidak memiliki hak akses untuk ekspedisi ini.'], 403);
+        }
+
+        $newStatus = $request->input('status');
+        $partnership->status = $newStatus;
+
+        if ($newStatus === 'ACTIVE') {
+            $partnership->partnered_at = now();
+
+            // Set default expedition supir jika belum punya
+            if ($partnership->user && !$partnership->user->expedition_id) {
+                $partnership->user->update(['expedition_id' => $partnership->expedition_id]);
+            }
+            if ($partnership->driver && !$partnership->driver->expedition_id) {
+                $partnership->driver->update(['expedition_id' => $partnership->expedition_id]);
+            }
+        }
+
+        $partnership->save();
+
+        $statusLabels = [
+            'ACTIVE' => 'disetujui sebagai mitra aktif',
+            'REJECTED' => 'ditolak permohonan kemitraannya',
+            'INACTIVE' => 'dinonaktifkan kemitraannya',
+            'PENDING' => 'dikembalikan ke status permohonan',
+        ];
+
+        $driverName = $partnership->driver?->name ?? 'Supir';
+
+        return response()->json([
+            'status' => 'success',
+            'message' => "Supir {$driverName} berhasil {$statusLabels[$newStatus]}.",
+            'partnership' => [
+                'id' => $partnership->id,
+                'status' => $partnership->status,
+                'partnered_at' => $partnership->partnered_at ? $partnership->partnered_at->format('d/m/Y H:i') : null,
+            ],
+        ]);
+    }
+
+    /**
+     * Helper untuk menentukan objek ekspedisi yang dikelola oleh user saat ini.
+     */
+    protected function resolveExpeditionForUser(User $user, $requestedExpeditionId = null): ?Expedition
+    {
+        if ($user->expedition) {
+            return $user->expedition;
+        }
+
+        if ($requestedExpeditionId) {
+            return Expedition::find($requestedExpeditionId);
+        }
+
+        if ($user->expedition_id === null) {
+            // Jika Super Admin tanpa parameter khusus, kembalikan ekspedisi pertama
+            return Expedition::first();
+        }
+
+        return null;
     }
 
     /**

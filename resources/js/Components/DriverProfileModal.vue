@@ -98,14 +98,17 @@ const handleConnectHandshake = async (tokenCode) => {
             token: cleanToken,
         });
 
-        if (res.data.status === 'success') {
+        if (res.data.status === 'success' || res.data.status === 'pending') {
             if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-            handshakeMsg.value = { type: 'success', text: res.data.message };
+            handshakeMsg.value = {
+                type: res.data.status === 'success' ? 'success' : 'pending',
+                text: res.data.message
+            };
             isHandshakeScannerOpen.value = false;
             manualTokenInput.value = '';
             showManualInput.value = false;
             await fetchPartnerships();
-            setTimeout(() => { handshakeMsg.value = null; }, 5000);
+            setTimeout(() => { handshakeMsg.value = null; }, 6000);
         } else {
             handshakeMsg.value = { type: 'error', text: res.data.message || 'Gagal menghubungkan kemitraan.' };
         }
@@ -276,13 +279,27 @@ const handleLogout = () => {
                             </div>
 
                             <!-- Pesan status handshake -->
-                            <div v-if="handshakeMsg" class="p-2.5 rounded-xl text-xs font-semibold flex items-center gap-2" :class="handshakeMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'">
-                                <i :class="handshakeMsg.type === 'success' ? 'ri-checkbox-circle-fill' : 'ri-error-warning-fill'"></i>
+                            <div 
+                                v-if="handshakeMsg" 
+                                class="p-2.5 rounded-xl text-xs font-semibold flex items-center gap-2" 
+                                :class="{
+                                    'bg-emerald-50 text-emerald-800 border border-emerald-200': handshakeMsg.type === 'success',
+                                    'bg-amber-50 text-amber-800 border border-amber-300': handshakeMsg.type === 'pending',
+                                    'bg-red-50 text-red-800 border border-red-200': handshakeMsg.type === 'error'
+                                }"
+                            >
+                                <i 
+                                    :class="{
+                                        'ri-checkbox-circle-fill text-emerald-600': handshakeMsg.type === 'success',
+                                        'ri-time-line text-amber-600': handshakeMsg.type === 'pending',
+                                        'ri-error-warning-fill text-red-600': handshakeMsg.type === 'error'
+                                    }"
+                                ></i>
                                 <span>{{ handshakeMsg.text }}</span>
                             </div>
 
                             <!-- Daftar ekspedisi terhubung -->
-                            <div v-if="partnerships.length > 0" class="space-y-1.5 max-h-36 overflow-y-auto">
+                            <div v-if="partnerships.length > 0" class="space-y-1.5 max-h-40 overflow-y-auto">
                                 <div v-for="p in partnerships" :key="p.id" class="p-2.5 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-between text-xs">
                                     <div class="flex items-center gap-2.5">
                                         <div class="w-7 h-7 rounded-lg flex items-center justify-center text-white font-bold text-xs shadow-sm" :style="{ backgroundColor: p.theme_color || '#8B5A2B' }">
@@ -293,8 +310,19 @@ const handleLogout = () => {
                                             <p class="text-[10px] text-gray-400">{{ p.phone || 'Ekspedisi Rekanan' }}</p>
                                         </div>
                                     </div>
-                                    <span class="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center gap-1">
+                                    
+                                    <!-- Status Badges -->
+                                    <span v-if="p.status === 'ACTIVE'" class="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center gap-1">
                                         <i class="ri-checkbox-circle-fill"></i> Mitra Aktif
+                                    </span>
+                                    <span v-else-if="p.status === 'PENDING'" class="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                                        <i class="ri-time-line"></i> Menunggu Gudang
+                                    </span>
+                                    <span v-else-if="p.status === 'REJECTED'" class="text-[9px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 flex items-center gap-1">
+                                        <i class="ri-close-circle-fill"></i> Ditolak
+                                    </span>
+                                    <span v-else class="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gray-200 text-gray-600 flex items-center gap-1">
+                                        <i class="ri-pause-circle-line"></i> Nonaktif
                                     </span>
                                 </div>
                             </div>

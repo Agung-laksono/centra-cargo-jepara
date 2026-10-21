@@ -67,6 +67,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/api/driver/partnerships', [DriverOnboardingController::class, 'getPartnerships'])->name('driver.partnerships');
     Route::post('/api/driver/handshake', [DriverOnboardingController::class, 'connectHandshake'])->name('driver.handshake');
     Route::get('/api/expedition/handshake-qr', [DriverOnboardingController::class, 'getExpeditionQr'])->name('expedition.handshake.qr');
+    Route::post('/api/expedition/reset-qr', [DriverOnboardingController::class, 'resetExpeditionQr'])->name('expedition.reset.qr');
+    Route::get('/api/expedition/partner-requests', [DriverOnboardingController::class, 'getPartnerRequests'])->name('expedition.partner.requests');
+    Route::post('/api/expedition/partner-requests/{id}/status', [DriverOnboardingController::class, 'updatePartnerStatus'])->name('expedition.partner.update_status');
 });
 
 // Direct Download APK Supir & Gudang
@@ -395,6 +398,7 @@ Route::get('/supir/lintas', function (Request $request) {
             'id' => $shipment->id, // Use shipment ID as the unique identifier for the card
             'resi' => $shipment->tracking_number,
             'penerima' => $shipment->recipient_name,
+            'telepon' => $shipment->recipient_phone,
             'tujuan' => $cityName.', '.$districtName,
             'alamat_lengkap' => $shipment->recipient_address,
             'status' => $shipment->current_status,

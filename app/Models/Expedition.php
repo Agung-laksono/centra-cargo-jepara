@@ -22,8 +22,13 @@ class Expedition extends Model
     public function partnerDrivers()
     {
         return $this->belongsToMany(Driver::class, 'driver_expeditions')
-            ->withPivot(['status', 'role', 'partnered_at'])
+            ->withPivot(['id', 'status', 'role', 'partnered_at'])
             ->withTimestamps();
+    }
+
+    public function driverPartnerships()
+    {
+        return $this->hasMany(DriverExpedition::class);
     }
 
     public function users()

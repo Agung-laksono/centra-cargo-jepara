@@ -25,6 +25,7 @@ const getInitialPengantaran = () => {
             titik: d.tujuan,
             resi: d.resi,
             penerima: d.penerima,
+            telepon: d.telepon || null,
             alamat: d.tujuan, 
             alamatLengkap: d.alamat_lengkap || d.tujuan,
             koli: d.kolis ? d.kolis.length : 1, 
@@ -99,6 +100,19 @@ const activeManifest = computed(() => props.manifest || {
     id: 'SIMULASI-001',
     driver_name: 'Supir Simulasi',
 });
+
+const getWaLink = (item) => {
+    if (!item?.telepon) return null;
+    let cleanPhone = item.telepon.replace(/\D/g, '');
+    if (cleanPhone.startsWith('0')) cleanPhone = '62' + cleanPhone.substring(1);
+    const text = encodeURIComponent(`Halo Bpk/Ibu ${item.penerima}, saya supir ekspedisi yang sedang mengantar paket kargo Anda (Resi: ${item.resi}). Apakah saat ini ada di lokasi?`);
+    return `https://wa.me/${cleanPhone}?text=${text}`;
+};
+
+const getMapsLink = (item) => {
+    const query = encodeURIComponent((item?.alamatLengkap || item?.alamat || '') + ' Indonesia');
+    return `https://www.google.com/maps/search/?api=1&query=${query}`;
+};
 
 // Mulai lacak lokasi supir otomatis
 const { isTracking, hasSynced, lastSyncTime, trackingError } = useLocationTracking(activeManifest.value.token);
@@ -409,51 +423,44 @@ const formatRupiah = (angka) => {
     <div class="bg-[#f8f9fc] min-h-[100dvh] font-sans antialiased text-gray-800 pb-[95px] max-w-md mx-auto shadow-2xl relative selection:bg-primary/20">
         
         <!-- Header with Glassmorphism -->
-        <header class="bg-gradient-to-br from-primary to-primaryDark text-white px-4 pb-5 rounded-b-[1.5rem] shadow-md relative z-10 overflow-hidden" style="padding-top: calc(35px + 1.25rem);">
+        <header class="bg-gradient-to-br from-primary to-primaryDark text-white px-4 pb-5 rounded-b-[1.75rem] shadow-md relative z-10 overflow-hidden" style="padding-top: calc(35px + 1.25rem);">
             <!-- Decorative circle -->
-            <div class="absolute -top-10 -right-10 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
+            <div class="absolute -top-10 -right-10 w-32 h-32 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
             
             <div class="flex justify-between items-center mb-3 relative z-10">
-                <div class="flex items-center gap-2">
-                    <Link v-if="$page.props.auth && $page.props.auth.user" href="/manifest" class="bg-white/20 hover:bg-white/30 p-1.5 rounded-full backdrop-blur-md border border-white/20 transition-colors flex items-center justify-center">
-                        <i class="ri-arrow-left-line text-white text-base"></i>
-                    </Link>
-                    <div class="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors duration-1000"
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-xl flex items-center justify-center backdrop-blur-sm transition-colors duration-1000 shadow-sm"
                          :class="hasSynced && !trackingError ? 'bg-green-400/20 border border-green-300/40' : 'bg-white/20 border border-white/30'">
                         <i class="ri-truck-fill text-lg transition-all duration-1000" :class="hasSynced && !trackingError ? 'text-green-100 animate-pulse' : 'text-white'"></i>
                     </div>
-                    <h1 class="font-bold text-base tracking-wide">{{ $page.props.company?.name || 'Aplikasi Cargo' }}</h1>
+                    <div>
+                        <span class="text-[9px] text-white/70 font-bold uppercase tracking-widest block">{{ activeManifest.expedition_name || $page.props.company?.name || 'Aplikasi Cargo' }}</span>
+                        <h1 class="font-extrabold text-sm tracking-wide text-white">Surat Jalan Lintas</h1>
+                    </div>
                 </div>
+
                 <div class="flex items-center gap-2">
-                    <div class="text-[9px] bg-white/20 px-2.5 py-1 rounded-full font-bold tracking-widest uppercase border border-white/20 backdrop-blur-md">
+                    <div class="text-[9px] bg-white/20 px-2.5 py-1 rounded-full font-black tracking-widest uppercase border border-white/20 backdrop-blur-md">
                         Tugas Lintas
                     </div>
+                    <!-- Single Tombol Profil & Logout Supir -->
                     <button
                         type="button"
                         @click="isProfileModalOpen = true"
-                        class="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 border border-white/25 flex items-center justify-center text-white active:scale-95 transition-all shadow-sm"
-                        title="Profil & Akun Supir"
+                        class="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 px-2.5 py-1.5 rounded-xl border border-white/30 text-white text-xs font-bold active:scale-95 transition-all shadow-sm"
+                        title="Profil Supir & Keluar Aplikasi"
                     >
-                        <i class="ri-user-3-line text-xs"></i>
+                        <i class="ri-user-star-fill text-amber-300"></i>
+                        <span class="max-w-[100px] truncate">{{ activeManifest.driver_name }}</span>
                     </button>
                 </div>
             </div>
             
             <div class="relative z-10 flex flex-col items-start mt-2">
-                <p class="text-[10px] text-white/80 font-medium uppercase tracking-wider mb-0.5">Manifest Perjalanan</p>
+                <p class="text-[10px] text-white/80 font-bold uppercase tracking-wider mb-0.5">Manifest Perjalanan</p>
                 <h2 class="text-2xl font-black tracking-tight drop-shadow-sm">MNF-{{ activeManifest.id }}</h2>
-                <div class="flex flex-wrap gap-1.5 mt-2">
-                    <button
-                        type="button"
-                        @click="isProfileModalOpen = true"
-                        class="flex items-center gap-1.5 text-xs font-medium bg-black/20 hover:bg-black/35 active:scale-95 px-2 py-1 rounded border border-white/20 backdrop-blur-sm text-white transition-all cursor-pointer shadow-sm group"
-                        title="Buka Info Profil & Keluar Aplikasi"
-                    >
-                        <i class="ri-user-star-fill text-white/90 group-hover:scale-110 transition-transform"></i>
-                        <span>{{ activeManifest.driver_name }}</span>
-                        <i class="ri-arrow-down-s-line text-white/60 group-hover:text-white text-xs"></i>
-                    </button>
-                    <div v-if="totalTagihanCod > 0" class="flex items-center gap-1.5 text-xs font-bold bg-green-500/20 text-green-100 px-2 py-1 rounded border border-green-400/30 backdrop-blur-sm shadow-inner">
+                <div v-if="totalTagihanCod > 0" class="flex flex-wrap gap-1.5 mt-2">
+                    <div class="flex items-center gap-1.5 text-xs font-bold bg-green-500/20 text-green-100 px-2.5 py-1 rounded-lg border border-green-400/30 backdrop-blur-sm shadow-inner">
                         <i class="ri-money-dollar-circle-fill text-green-300 text-sm"></i>
                         <span>COD: {{ formatRupiah(tagihanTerkumpul) }} / {{ formatRupiah(totalTagihanCod) }}</span>
                     </div>
@@ -576,14 +583,36 @@ const formatRupiah = (angka) => {
                             </div>
                         </div>
 
-                        <div v-show="!isReordering" class="p-2 bg-gray-50/50 border-t border-gray-50">
+                        <div v-show="!isReordering" class="p-2 bg-gray-50/50 border-t border-gray-50 flex items-center gap-1.5">
+                            <!-- Quick WhatsApp Direct Button -->
+                            <a 
+                                v-if="getWaLink(element)"
+                                :href="getWaLink(element)"
+                                target="_blank"
+                                @click.stop
+                                class="w-8 h-8 rounded-lg bg-green-50 hover:bg-green-100 text-green-600 border border-green-200 flex items-center justify-center shrink-0 transition shadow-sm active:scale-95"
+                                title="Chat WhatsApp Penerima"
+                            >
+                                <i class="ri-whatsapp-line text-sm"></i>
+                            </a>
+                            <!-- Quick Maps Navigation Button -->
+                            <a 
+                                :href="getMapsLink(element)"
+                                target="_blank"
+                                @click.stop
+                                class="w-8 h-8 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 flex items-center justify-center shrink-0 transition shadow-sm active:scale-95"
+                                title="Buka Petunjuk Arah Google Maps"
+                            >
+                                <i class="ri-direction-line text-sm"></i>
+                            </a>
+                            <!-- Action button -->
                             <button 
                                 @click="bukaModal(element)"
                                 :disabled="element.selesai"
-                                class="w-full py-1.5 flex items-center justify-center gap-1.5 rounded shadow-sm font-bold active:scale-95 transition-all text-xs"
-                                :class="element.selesai ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none' : 'bg-primary text-white hover:bg-primaryLight hover:shadow-md'"
+                                class="flex-1 py-1.5 flex items-center justify-center gap-1.5 rounded-lg shadow-sm font-bold active:scale-95 transition-all text-xs"
+                                :class="element.selesai ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed shadow-none' : 'bg-primary text-white hover:bg-primaryDark hover:shadow-md'"
                             >
-                                <i :class="element.selesai ? 'ri-check-double-line' : 'ri-camera-lens-fill'" class="text-sm"></i>
+                                <i :class="element.selesai ? 'ri-checkbox-circle-fill text-green-500' : 'ri-camera-lens-fill'" class="text-sm"></i>
                                 <span>{{ element.selesai ? 'Selesai Diantar' : 'Scan Bukti Antar' }}</span>
                             </button>
                         </div>
@@ -619,12 +648,21 @@ const formatRupiah = (angka) => {
                         </div>
 
                         <div class="mt-2.5 flex gap-2">
-                            <button class="flex-1 flex items-center justify-center gap-1 bg-green-50 text-green-600 font-bold py-1.5 rounded border border-green-100 active:scale-95 transition-all text-[10px]">
-                                <i class="ri-whatsapp-line text-xs"></i> Hubungi WA
-                            </button>
-                            <button class="flex-1 flex items-center justify-center gap-1 bg-blue-50 text-blue-600 font-bold py-1.5 rounded border border-blue-100 active:scale-95 transition-all text-[10px]">
-                                <i class="ri-direction-line text-xs"></i> Petunjuk Arah
-                            </button>
+                            <a 
+                                v-if="getWaLink(selectedAntaran)"
+                                :href="getWaLink(selectedAntaran)"
+                                target="_blank"
+                                class="flex-1 flex items-center justify-center gap-1 bg-green-50 hover:bg-green-100 text-green-700 font-bold py-2 rounded-lg border border-green-200 active:scale-95 transition-all text-xs"
+                            >
+                                <i class="ri-whatsapp-line text-sm"></i> Hubungi WA
+                            </a>
+                            <a 
+                                :href="getMapsLink(selectedAntaran)"
+                                target="_blank"
+                                class="flex-1 flex items-center justify-center gap-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold py-2 rounded-lg border border-blue-200 active:scale-95 transition-all text-xs"
+                            >
+                                <i class="ri-direction-line text-sm"></i> Petunjuk Arah
+                            </a>
                         </div>
                     </div>
                     

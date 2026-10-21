@@ -374,9 +374,6 @@ const selesaikanJemput = (auto = false, force = false) => {
             <!-- Top Row: Navigation, Title & Badge -->
             <div class="flex justify-between items-center mb-3 relative z-10">
                 <div class="flex items-center gap-2.5">
-                    <Link v-if="$page.props.auth && $page.props.auth.user" href="/penjemputan" class="bg-white/10 hover:bg-white/20 p-2 rounded-xl backdrop-blur-md border border-white/15 transition-colors flex items-center justify-center">
-                        <i class="ri-arrow-left-line text-white text-base"></i>
-                    </Link>
                     <div class="w-9 h-9 rounded-xl flex items-center justify-center bg-primary/20 text-primary border border-primary/40 shadow-inner">
                         <i class="ri-box-3-fill text-lg"></i>
                     </div>
@@ -393,19 +390,20 @@ const selesaikanJemput = (auto = false, force = false) => {
                         <span>Jemput Toko</span>
                     </div>
 
-                    <!-- Tombol Profil & Logout -->
+                    <!-- Single Tombol Profil & Logout Supir -->
                     <button 
                         type="button" 
                         @click="isProfileModalOpen = true"
-                        class="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 flex items-center justify-center text-white active:scale-95 transition-all shadow-sm"
-                        title="Profil & Pengaturan Akun"
+                        class="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-2.5 py-1.5 rounded-xl border border-white/20 text-white text-xs font-bold active:scale-95 transition-all shadow-sm"
+                        title="Profil Supir & Keluar Aplikasi"
                     >
-                        <i class="ri-user-3-line text-sm"></i>
+                        <i class="ri-user-star-fill text-primary"></i>
+                        <span class="max-w-[100px] truncate">{{ activeManifest.driver_name }}</span>
                     </button>
                 </div>
             </div>
             
-            <!-- Bottom Row: Title, Target & Supir -->
+            <!-- Bottom Row: Title & Target -->
             <div class="relative z-10 mt-3 flex items-end justify-between gap-3">
                 <div>
                     <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Surat Tugas Pickup</p>
@@ -413,18 +411,6 @@ const selesaikanJemput = (auto = false, force = false) => {
                         <span>PICKUP-{{ activeManifest.id }}</span>
                     </h2>
                 </div>
-
-                <!-- Tombol Badge Supir Interaktif -->
-                <button
-                    type="button"
-                    @click="isProfileModalOpen = true"
-                    class="flex items-center gap-1.5 text-xs font-semibold bg-white/10 hover:bg-white/20 active:scale-95 px-2.5 py-1.5 rounded-xl border border-white/15 backdrop-blur-sm text-gray-200 transition-all cursor-pointer shadow-sm group"
-                    title="Buka Info Profil & Keluar Aplikasi"
-                >
-                    <i class="ri-steering-2-line text-primary group-hover:scale-110 transition-transform"></i>
-                    <span class="truncate max-w-[120px] font-bold text-white">{{ activeManifest.driver_name }}</span>
-                    <i class="ri-arrow-down-s-line text-gray-400 group-hover:text-white text-xs"></i>
-                </button>
             </div>
         </header>
 

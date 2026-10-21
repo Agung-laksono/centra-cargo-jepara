@@ -1301,6 +1301,7 @@ const transitionProps = computed(() => {
         <!-- Modal QR Kemitraan Armada Supir -->
         <ExpeditionHandshakeModal
             :show="isHandshakeModalOpen"
+            :expedition-id="page.props.auth?.user?.expedition_id"
             @close="isHandshakeModalOpen = false"
         />
 
