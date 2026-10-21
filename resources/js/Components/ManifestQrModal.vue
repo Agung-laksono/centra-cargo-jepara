@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
+import { useEcho } from '@/Composables/useEcho';
 
 const props = defineProps({
     show: {
@@ -12,9 +13,57 @@ const props = defineProps({
     },
 });
 
-const emit = defineEmits(['close']);
+const emit = defineEmits(['close', 'handshaked']);
 
+const { getEcho } = useEcho();
 const copySuccess = ref(false);
+const handshakeSuccess = ref(null);
+
+let activeEchoChannel = null;
+
+const startListening = () => {
+    if (!props.manifest?.id) return;
+    const echo = getEcho();
+    if (!echo) return;
+
+    activeEchoChannel = echo.channel(`manifest.${props.manifest.id}`);
+    activeEchoChannel.listen('.manifest.handshaked', (event) => {
+        if (event.manifestId == props.manifest.id) {
+            handshakeSuccess.value = {
+                driverName: event.driverName,
+                vehicleName: event.vehicleName,
+            };
+            emit('handshaked', event);
+            setTimeout(() => {
+                emit('close');
+                handshakeSuccess.value = null;
+            }, 2500);
+        }
+    });
+};
+
+const stopListening = () => {
+    if (activeEchoChannel && props.manifest?.id) {
+        try {
+            const echo = getEcho();
+            echo?.leave(`manifest.${props.manifest.id}`);
+        } catch (e) {}
+        activeEchoChannel = null;
+    }
+};
+
+watch(() => props.show, (newVal) => {
+    if (newVal) {
+        handshakeSuccess.value = null;
+        startListening();
+    } else {
+        stopListening();
+    }
+}, { immediate: true });
+
+onUnmounted(() => {
+    stopListening();
+});
 
 const manifestToken = computed(() => {
     return props.manifest?.token || props.manifest?.magic_link_token || '';
@@ -84,35 +133,57 @@ const handlePrint = () => {
                         </button>
                     </div>
 
-                    <!-- QR Box -->
-                    <div class="relative bg-gradient-to-b from-gray-50 to-white p-4 rounded-2xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center mb-3.5 shadow-inner">
-                        <img 
-                            :src="qrImageUrl" 
-                            alt="QR Handshake Manifest" 
-                            class="w-52 h-52 object-contain rounded-xl shadow-sm bg-white p-1"
-                        />
-                        <div class="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold uppercase">
-                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                            Scan via HP Supir
+                    <!-- Tampilan Sukses Handshake Real-time -->
+                    <div v-if="handshakeSuccess" class="py-6 px-4 space-y-4 text-center animate-fade-in">
+                        <div class="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto text-3xl shadow-lg shadow-emerald-500/20">
+                            <i class="ri-checkbox-circle-fill"></i>
                         </div>
+                        <div>
+                            <h3 class="font-extrabold text-base text-emerald-700">Handshake Berhasil!</h3>
+                            <p class="text-xs text-gray-500 mt-0.5">Surat jalan telah berhasil diambil alih oleh supir armada.</p>
+                        </div>
+                        <div class="p-3.5 bg-emerald-50/80 rounded-2xl border border-emerald-200/80 text-center">
+                            <p class="text-xs font-semibold text-gray-500">Supir Penerima:</p>
+                            <p class="text-sm font-black text-emerald-950 mt-0.5">{{ handshakeSuccess.driverName }}</p>
+                            <p class="text-[11px] text-gray-600 font-medium">{{ handshakeSuccess.vehicleName }}</p>
+                        </div>
+                        <p class="text-[11px] text-gray-400 font-medium flex items-center justify-center gap-1.5 animate-pulse">
+                            <i class="ri-loader-4-line animate-spin"></i> Menutup jendela otomatis...
+                        </p>
                     </div>
 
-                    <!-- Instruksi Supir -->
-                    <p class="text-xs text-gray-600 font-medium leading-relaxed mb-3">
-                        Arahkan kamera HP supir ke QR di atas untuk serah terima & mengambil tugas pengiriman ini secara otomatis.
-                    </p>
-
-                    <!-- Info Supir & Muatan -->
-                    <div class="bg-gray-50 rounded-xl p-2.5 border border-gray-100 text-left text-xs mb-4 space-y-1">
-                        <div class="flex justify-between items-center text-gray-500 text-[11px]">
-                            <span>Supir Armada:</span>
-                            <strong class="text-gray-800">
-                                {{ (manifest.driver && manifest.driver !== 'Vendor') ? (manifest.driver?.name || manifest.driver) : (manifest.vendor_name ? 'Vendor: ' + manifest.vendor_name : 'Bebas (Tentukan via Handshake)') }}
-                            </strong>
+                    <!-- Tampilan Normal QR Code -->
+                    <div v-else>
+                        <!-- QR Box -->
+                        <div class="relative bg-gradient-to-b from-gray-50 to-white p-4 rounded-2xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center mb-3.5 shadow-inner">
+                            <img 
+                                :src="qrImageUrl" 
+                                alt="QR Handshake Manifest" 
+                                class="w-52 h-52 object-contain rounded-xl shadow-sm bg-white p-1"
+                            />
+                            <div class="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold uppercase">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                Scan via HP Supir
+                            </div>
                         </div>
-                        <div class="flex justify-between items-center text-gray-500 text-[11px]">
-                            <span>Total Muatan:</span>
-                            <strong class="text-primary font-bold">{{ manifest.total_koli }} Koli</strong>
+
+                        <!-- Instruksi Supir -->
+                        <p class="text-xs text-gray-600 font-medium leading-relaxed mb-3">
+                            Arahkan kamera HP supir ke QR di atas untuk serah terima & mengambil tugas pengiriman ini secara otomatis.
+                        </p>
+
+                        <!-- Info Supir & Muatan -->
+                        <div class="bg-gray-50 rounded-xl p-2.5 border border-gray-100 text-left text-xs mb-4 space-y-1">
+                            <div class="flex justify-between items-center text-gray-500 text-[11px]">
+                                <span>Supir Armada:</span>
+                                <strong class="text-gray-800">
+                                    {{ (manifest.driver && manifest.driver !== 'Vendor') ? (manifest.driver?.name || manifest.driver) : (manifest.vendor_name ? 'Vendor: ' + manifest.vendor_name : 'Bebas (Tentukan via Handshake)') }}
+                                </strong>
+                            </div>
+                            <div class="flex justify-between items-center text-gray-500 text-[11px]">
+                                <span>Total Muatan:</span>
+                                <strong class="text-primary font-bold">{{ manifest.total_koli }} Koli</strong>
+                            </div>
                         </div>
                     </div>
 

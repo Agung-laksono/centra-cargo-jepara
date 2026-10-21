@@ -75,7 +75,31 @@ class SettingController extends Controller
             'current_sha' => $githubSettings['system_current_sha'] ?? null,
         ] : null;
 
-        $backups = $isSuperAdmin ? app(\App\Services\BackupService::class)->getBackupsList() : [];
+        // 4. Ambil konfigurasi Integrasi Real-time (Pusher / Reverb)
+        $integrationKeys = [
+            'broadcast_driver',
+            'pusher_app_id', 'pusher_app_key', 'pusher_app_secret', 'pusher_app_cluster', 'pusher_scheme',
+            'reverb_app_id', 'reverb_app_key', 'reverb_app_secret', 'reverb_host', 'reverb_port', 'reverb_scheme',
+        ];
+        $integrationSettings = Setting::withoutGlobalScope('expedition')
+            ->whereNull('expedition_id')
+            ->whereIn('key', $integrationKeys)
+            ->pluck('value', 'key')->toArray();
+
+        $integrationData = $isSuperAdmin ? [
+            'driver' => $integrationSettings['broadcast_driver'] ?? env('BROADCAST_CONNECTION', 'pusher'),
+            'pusher_app_id' => $integrationSettings['pusher_app_id'] ?? env('PUSHER_APP_ID', ''),
+            'pusher_app_key' => $integrationSettings['pusher_app_key'] ?? env('PUSHER_APP_KEY', ''),
+            'pusher_app_secret' => $integrationSettings['pusher_app_secret'] ?? env('PUSHER_APP_SECRET', ''),
+            'pusher_app_cluster' => $integrationSettings['pusher_app_cluster'] ?? env('PUSHER_APP_CLUSTER', 'ap1'),
+            'pusher_scheme' => $integrationSettings['pusher_scheme'] ?? env('PUSHER_SCHEME', 'https'),
+            'reverb_app_id' => $integrationSettings['reverb_app_id'] ?? env('REVERB_APP_ID', ''),
+            'reverb_app_key' => $integrationSettings['reverb_app_key'] ?? env('REVERB_APP_KEY', ''),
+            'reverb_app_secret' => $integrationSettings['reverb_app_secret'] ?? env('REVERB_APP_SECRET', ''),
+            'reverb_host' => $integrationSettings['reverb_host'] ?? env('REVERB_HOST', 'localhost'),
+            'reverb_port' => $integrationSettings['reverb_port'] ?? env('REVERB_PORT', '8080'),
+            'reverb_scheme' => $integrationSettings['reverb_scheme'] ?? env('REVERB_SCHEME', 'https'),
+        ] : null;
 
         return Inertia::render('Settings/Index', [
             'app' => $appData,
@@ -85,6 +109,7 @@ class SettingController extends Controller
             'warehouses' => $warehouses,
             'currentExpedition' => $expedition,
             'github' => $githubData,
+            'integration' => $integrationData,
             'backups' => $backups,
         ]);
     }
@@ -174,5 +199,125 @@ class SettingController extends Controller
         }
 
         return redirect()->back()->with('success', 'Data Perusahaan berhasil diperbarui!');
+    }
+
+    /**
+     * Simpan pembaruan Konfigurasi Integrasi Real-time (Pusher / Reverb)
+     */
+    public function updateIntegration(Request $request)
+    {
+        abort_unless(auth()->user() && auth()->user()->expedition_id === null, 403, 'Hanya Owner/Super Admin yang dapat mengubah konfigurasi integrasi.');
+
+        $validated = $request->validate([
+            'driver' => 'required|in:pusher,reverb,log',
+            'pusher_app_id' => 'nullable|string',
+            'pusher_app_key' => 'nullable|string',
+            'pusher_app_secret' => 'nullable|string',
+            'pusher_app_cluster' => 'nullable|string',
+            'pusher_scheme' => 'nullable|in:https,http',
+            'reverb_app_id' => 'nullable|string',
+            'reverb_app_key' => 'nullable|string',
+            'reverb_app_secret' => 'nullable|string',
+            'reverb_host' => 'nullable|string',
+            'reverb_port' => 'nullable|string',
+            'reverb_scheme' => 'nullable|in:https,http',
+        ]);
+
+        $settingsToSave = [
+            'broadcast_driver' => $validated['driver'],
+            'pusher_app_id' => $validated['pusher_app_id'] ?? '',
+            'pusher_app_key' => $validated['pusher_app_key'] ?? '',
+            'pusher_app_secret' => $validated['pusher_app_secret'] ?? '',
+            'pusher_app_cluster' => $validated['pusher_app_cluster'] ?? 'ap1',
+            'pusher_scheme' => $validated['pusher_scheme'] ?? 'https',
+            'reverb_app_id' => $validated['reverb_app_id'] ?? '',
+            'reverb_app_key' => $validated['reverb_app_key'] ?? '',
+            'reverb_app_secret' => $validated['reverb_app_secret'] ?? '',
+            'reverb_host' => $validated['reverb_host'] ?? 'localhost',
+            'reverb_port' => $validated['reverb_port'] ?? '8080',
+            'reverb_scheme' => $validated['reverb_scheme'] ?? 'https',
+        ];
+
+        foreach ($settingsToSave as $key => $value) {
+            Setting::withoutGlobalScope('expedition')->updateOrCreate(
+                [
+                    'key' => $key,
+                    'expedition_id' => null,
+                ],
+                ['value' => $value]
+            );
+        }
+
+        // Sinkronkan juga ke file .env
+        $this->updateEnvFile([
+            'BROADCAST_CONNECTION' => $validated['driver'],
+            'PUSHER_APP_ID' => $validated['pusher_app_id'] ?? '',
+            'PUSHER_APP_KEY' => $validated['pusher_app_key'] ?? '',
+            'PUSHER_APP_SECRET' => $validated['pusher_app_secret'] ?? '',
+            'PUSHER_APP_CLUSTER' => $validated['pusher_app_cluster'] ?? 'ap1',
+            'PUSHER_SCHEME' => $validated['pusher_scheme'] ?? 'https',
+            'REVERB_APP_ID' => $validated['reverb_app_id'] ?? '',
+            'REVERB_APP_KEY' => $validated['reverb_app_key'] ?? '',
+            'REVERB_APP_SECRET' => $validated['reverb_app_secret'] ?? '',
+            'REVERB_HOST' => $validated['reverb_host'] ?? 'localhost',
+            'REVERB_PORT' => $validated['reverb_port'] ?? '8080',
+            'REVERB_SCHEME' => $validated['reverb_scheme'] ?? 'https',
+        ]);
+
+        return redirect()->back()->with('success', 'Konfigurasi Integrasi Real-time berhasil diperbarui!');
+    }
+
+    /**
+     * Kirim broadcast uji coba untuk mengetes koneksi WebSocket
+     */
+    public function testBroadcast(Request $request)
+    {
+        abort_unless(auth()->user() && auth()->user()->expedition_id === null, 403, 'Akses ditolak.');
+
+        try {
+            $driver = config('broadcasting.default');
+            broadcast(new \App\Events\TestBroadcastEvent("Koneksi {$driver} Berhasil! Waktu: " . now()->format('H:i:s') . ' WIB'));
+
+            return response()->json([
+                'status' => 'success',
+                'message' => "Event tes berhasil dikirim via driver '{$driver}'! Memeriksa respon balik di browser...",
+                'driver' => $driver,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal mengirim event broadcast: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Helper untuk memperbarui nilai di file .env
+     */
+    protected function updateEnvFile(array $data)
+    {
+        $envPath = base_path('.env');
+        if (!file_exists($envPath)) {
+            return;
+        }
+
+        $envContent = file_get_contents($envPath);
+
+        foreach ($data as $key => $value) {
+            $value = trim($value ?? '');
+            if (preg_match('/\s/', $value)) {
+                $formattedValue = '"' . addcslashes($value, '"') . '"';
+            } else {
+                $formattedValue = $value;
+            }
+
+            if (preg_match("/^{$key}=.*/m", $envContent)) {
+                $envContent = preg_replace("/^{$key}=.*/m", "{$key}={$formattedValue}", $envContent);
+            } else {
+                $envContent .= "\n{$key}={$formattedValue}";
+            }
+        }
+
+        @file_put_contents($envPath, $envContent);
     }
 }

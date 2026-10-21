@@ -101,6 +101,16 @@ class HandleInertiaRequests extends Middleware
                 'wa_link' => fn () => $request->session()->get('wa_link'),
                 'magic_url' => fn () => $request->session()->get('magic_url'),
             ],
+            'broadcasting' => [
+                'driver' => config('broadcasting.default', 'log'),
+                'key' => config('broadcasting.default') === 'reverb'
+                    ? config('broadcasting.connections.reverb.key')
+                    : config('broadcasting.connections.pusher.key'),
+                'cluster' => config('broadcasting.connections.pusher.options.cluster', 'ap1'),
+                'host' => config('broadcasting.connections.reverb.options.host', 'localhost'),
+                'port' => config('broadcasting.connections.reverb.options.port', 8080),
+                'scheme' => config('broadcasting.connections.reverb.options.scheme', 'https'),
+            ],
         ];
     }
 }

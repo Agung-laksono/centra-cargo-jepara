@@ -1,11 +1,38 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { useForm, router, usePage } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import AppDrawer from '@/Components/AppDrawer.vue';
 import SwipeableTabs from '@/Components/SwipeableTabs.vue';
 import { useTabCache } from '@/Composables/useTabCache';
 import { useFilterCache } from '@/Composables/useFilterCache';
 import ManifestQrModal from '@/Components/ManifestQrModal.vue';
+import { useEcho } from '@/Composables/useEcho';
+
+const { getEcho } = useEcho();
+let pickupEchoChannel = null;
+
+const handleHandshakeSuccess = () => {
+    router.reload({ preserveScroll: true, preserveState: true });
+};
+
+onMounted(() => {
+    const echo = getEcho();
+    if (echo) {
+        pickupEchoChannel = echo.channel('manifests');
+        pickupEchoChannel.listen('.manifest.handshaked', () => {
+            handleHandshakeSuccess();
+        });
+    }
+});
+
+onUnmounted(() => {
+    if (pickupEchoChannel) {
+        try {
+            getEcho()?.leave('manifests');
+        } catch (e) {}
+    }
+});
 
 // Logika scroll untuk menyembunyikan filter & mendeteksi posisi sticky
 const showHeaderScroll = ref(true);
@@ -144,7 +171,6 @@ const isSearchActive = ref(false);
 const isDateActive = ref(false);
 
 // Form Supir Baru
-import { useForm, router, usePage } from '@inertiajs/vue3';
 const showAddDriver = ref(false);
 const driverForm = useForm({
     name: '',
@@ -847,6 +873,7 @@ const hasActiveFilters = computed(() => {
             :show="isQrModalOpen"
             :manifest="selectedQrManifest"
             @close="isQrModalOpen = false"
+            @handshaked="handleHandshakeSuccess"
         />
 
     </AdminLayout>

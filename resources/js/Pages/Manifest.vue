@@ -7,6 +7,7 @@ import { stopAllActiveCameraStreams } from '@/Composables/useCameraManager';
 import axios from 'axios';
 import localforage from 'localforage';
 import ManifestQrModal from '@/Components/ManifestQrModal.vue';
+import { useEcho } from '@/Composables/useEcho';
 
 // ---------------------------------------------------------
 // PROPS (Data dari Backend)
@@ -28,6 +29,37 @@ const loadingMore = ref(false);
 const hasMoreManifests = ref(props.manifests.length >= 10);
 const selectedQrManifest = ref(null);
 const isQrModalOpen = ref(false);
+
+const { getEcho } = useEcho();
+let manifestsEchoChannel = null;
+
+const handleHandshakeSuccess = (event) => {
+    const found = manifestsData.value.find(m => m.id == event.manifestId);
+    if (found) {
+        found.driver_id = event.driverId;
+        found.driver = { name: event.driverName, vehicle_name: event.vehicleName };
+        found.status = event.status || 'loaded';
+    }
+    router.reload({ preserveScroll: true, preserveState: true });
+};
+
+onMounted(() => {
+    const echo = getEcho();
+    if (echo) {
+        manifestsEchoChannel = echo.channel('manifests');
+        manifestsEchoChannel.listen('.manifest.handshaked', (event) => {
+            handleHandshakeSuccess(event);
+        });
+    }
+});
+
+onUnmounted(() => {
+    if (manifestsEchoChannel) {
+        try {
+            getEcho()?.leave('manifests');
+        } catch (e) {}
+    }
+});
 
 const openQrModal = (m) => {
     selectedQrManifest.value = m;
@@ -1924,6 +1956,7 @@ const handleScan = (decodedText) => {
             :show="isQrModalOpen"
             :manifest="selectedQrManifest"
             @close="isQrModalOpen = false"
+            @handshaked="handleHandshakeSuccess"
         />
 
     </div>

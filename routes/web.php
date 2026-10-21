@@ -492,11 +492,18 @@ Route::post('/api/driver/location', function (Request $request) {
 
     $manifest = Manifest::where('magic_link_token', $request->token)->first();
     if ($manifest && $manifest->driver_id) {
-        Driver::where('id', $manifest->driver_id)->update([
-            'last_lat' => $request->lat,
-            'last_lng' => $request->lng,
-            'last_location_update' => now(),
-        ]);
+        $driver = Driver::find($manifest->driver_id);
+        if ($driver) {
+            $driver->update([
+                'last_lat' => $request->lat,
+                'last_lng' => $request->lng,
+                'last_location_update' => now(),
+            ]);
+
+            try {
+                broadcast(new \App\Events\DriverLocationUpdated($driver, $request->lat, $request->lng));
+            } catch (\Throwable $e) {}
+        }
 
         return response()->json(['status' => 'success']);
     }
@@ -1340,6 +1347,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/settings', [SettingController::class, 'index'])->name('settings.index');
     Route::post('/settings/company', [SettingController::class, 'updateCompany'])->name('settings.company.update');
     Route::post('/settings/app', [SettingController::class, 'updateApp'])->name('settings.app.update');
+    Route::post('/settings/integration', [SettingController::class, 'updateIntegration'])->name('settings.integration.update');
+    Route::post('/settings/integration/test', [SettingController::class, 'testBroadcast'])->name('settings.integration.test');
 
     Route::post('/settings/users', [UserController::class, 'store'])->name('settings.users.store');
     Route::put('/settings/users/{user}', [UserController::class, 'update'])->name('settings.users.update');

@@ -5,6 +5,7 @@ import { router } from '@inertiajs/vue3';
 import axios from 'axios';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { useEcho } from '@/Composables/useEcho';
 
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
@@ -17,6 +18,16 @@ const props = defineProps({
         default: () => []
     }
 });
+
+const { getEcho, connectionState } = useEcho();
+let driverLocationsChannel = null;
+
+const driversList = ref([...props.drivers_location]);
+
+watch(() => props.drivers_location, (newVal) => {
+    driversList.value = [...newVal];
+    renderMarkers(false);
+}, { deep: true });
 
 let mapInstance = null;
 let locationInterval = null;
@@ -79,7 +90,7 @@ const saveTrackingDistance = async () => {
     }
 };
 
-const activeDrivers = () => props.drivers_location.filter(d => d.last_lat && d.last_lng);
+const activeDrivers = () => driversList.value.filter(d => d.last_lat && d.last_lng);
 
 const toggleSatellite = () => {
     if (!mapInstance) return;
@@ -161,7 +172,7 @@ onMounted(async () => {
         streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors',
             maxZoom: 19,
-            keepBuffer: 8, // Mengurangi 깜ur loading peta saat digeser
+            keepBuffer: 8,
             updateWhenZooming: false,
             updateWhenIdle: true
         });
@@ -175,21 +186,51 @@ onMounted(async () => {
         );
 
         streetLayer.addTo(mapInstance);
-        
-        // Jangan auto-zoom ke supir agar peta tetap menampilkan seluruh Indonesia
         renderMarkers(false);
     }
 
-    // Auto refresh tiap 10 detik
-    locationInterval = setInterval(refreshLocation, 10000);
+    // Subscribe ke WebSocket Echo untuk live GPS tracking
+    const echo = getEcho();
+    if (echo) {
+        driverLocationsChannel = echo.channel('driver-locations');
+        driverLocationsChannel.listen('.driver.location.updated', (event) => {
+            const found = driversList.value.find(d => d.id == event.driverId);
+            if (found) {
+                found.last_lat = event.lat;
+                found.last_lng = event.lng;
+                found.last_location_update = event.timestamp;
+            } else {
+                driversList.value.push({
+                    id: event.driverId,
+                    name: event.driverName,
+                    vehicle_name: event.vehicleName,
+                    last_lat: event.lat,
+                    last_lng: event.lng,
+                    last_location_update: event.timestamp,
+                });
+            }
+            lastRefresh.value = new Date();
+            renderMarkers(false);
+
+            if (selectedDriverId.value == event.driverId && mapInstance) {
+                mapInstance.panTo([event.lat, event.lng], { animate: true, duration: 1.0 });
+            }
+        });
+    }
+
+    // Auto refresh tiap 30 detik sebagai cadangan fallback
+    locationInterval = setInterval(refreshLocation, 30000);
 });
 
 onUnmounted(() => {
     if (locationInterval) clearInterval(locationInterval);
+    if (driverLocationsChannel) {
+        try {
+            getEcho()?.leave('driver-locations');
+        } catch (e) {}
+    }
     if (mapInstance) { mapInstance.remove(); mapInstance = null; }
 });
-
-watch(() => props.drivers_location, () => renderMarkers(false), { deep: true });
 </script>
 
 <template>
@@ -205,6 +246,11 @@ watch(() => props.drivers_location, () => renderMarkers(false), { deep: true });
                         <option :value="100">Hemat (100m)</option>
                         <option :value="500">Jauh (500m)</option>
                     </select>
+                </div>
+
+                <div v-if="connectionState === 'connected'" class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold mr-1" title="Real-time WebSocket Aktif">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                    <span>Live GPS</span>
                 </div>
 
                 <span class="text-[10px] md:text-xs text-gray-500 font-medium hidden sm:inline-block mr-2 border-r border-gray-200 pr-3">

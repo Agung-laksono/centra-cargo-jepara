@@ -394,6 +394,13 @@ class DriverOnboardingController extends Controller
         }
         $manifest->save();
 
+        // Broadcast event real-time handshake ke gudang / dashboard
+        try {
+            broadcast(new \App\Events\ManifestHandshaked($manifest->fresh(['driver', 'expedition'])));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Broadcast ManifestHandshaked failed: ' . $e->getMessage());
+        }
+
         // Pastikan relasi kemitraan supir dengan ekspedisi pemilik surat jalan ini otomatis terhubung/aktif
         if ($manifest->expedition_id) {
             DriverExpedition::firstOrCreate(

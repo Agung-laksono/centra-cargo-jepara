@@ -14,6 +14,7 @@ const props = defineProps({
     roles: Array,
     warehouses: Array,
     github: { type: Object, default: () => ({ repo: '', branch: 'main', current_sha: null }) },
+    integration: { type: Object, default: () => null },
     backups: { type: Array, default: () => [] },
 });
 
@@ -27,6 +28,7 @@ const topTabs = computed(() => {
         return [
             { id: 'tabApp', label: 'Informasi Aplikasi', shortLabel: 'Aplikasi', icon: 'ri-global-line' },
             { id: 'tabUsers', label: 'Pengguna Sistem', shortLabel: 'Pengguna', icon: 'ri-user-settings-line' },
+            { id: 'tabIntegrasi', label: 'Integrasi Real-time', shortLabel: 'Integrasi', icon: 'ri-broadcast-line' },
             { id: 'tabBackup', label: 'Cadangan & Pemulihan', shortLabel: 'Backup', icon: 'ri-database-2-line' },
             { id: 'tabUpdate', label: 'Pembaruan Sistem', shortLabel: 'Update', icon: 'ri-refresh-line' },
         ];
@@ -643,6 +645,106 @@ const confirmDelete = async () => {
         isDeleting.value = false;
     }
 };
+
+// =======================
+// INTEGRASI REAL-TIME (PUSHER / REVERB) LOGIC
+// =======================
+import { useEcho } from '@/Composables/useEcho';
+const { initEcho, connectionState } = useEcho();
+
+const integrationForm = useForm({
+    driver: props.integration?.driver || 'pusher',
+    pusher_app_id: props.integration?.pusher_app_id || '',
+    pusher_app_key: props.integration?.pusher_app_key || '',
+    pusher_app_secret: props.integration?.pusher_app_secret || '',
+    pusher_app_cluster: props.integration?.pusher_app_cluster || 'ap1',
+    pusher_scheme: props.integration?.pusher_scheme || 'https',
+    reverb_app_id: props.integration?.reverb_app_id || '',
+    reverb_app_key: props.integration?.reverb_app_key || '',
+    reverb_app_secret: props.integration?.reverb_app_secret || '',
+    reverb_host: props.integration?.reverb_host || 'localhost',
+    reverb_port: props.integration?.reverb_port || '8080',
+    reverb_scheme: props.integration?.reverb_scheme || 'https',
+});
+
+const isTestingBroadcast = ref(false);
+const broadcastTestResult = ref(null);
+const integrationToast = ref(null);
+
+const showIntegrationToast = (msg, type = 'success') => {
+    integrationToast.value = { message: msg, type };
+    setTimeout(() => {
+        integrationToast.value = null;
+    }, 4500);
+};
+
+const submitIntegration = () => {
+    integrationForm.post(route('settings.integration.update'), {
+        preserveScroll: true,
+        onSuccess: () => {
+            showIntegrationToast('Konfigurasi Integrasi Real-time berhasil diperbarui!');
+            initEcho({
+                driver: integrationForm.driver,
+                key: integrationForm.driver === 'reverb' ? integrationForm.reverb_app_key : integrationForm.pusher_app_key,
+                cluster: integrationForm.pusher_app_cluster,
+                host: integrationForm.reverb_host,
+                port: integrationForm.reverb_port,
+                scheme: integrationForm.driver === 'reverb' ? integrationForm.reverb_scheme : integrationForm.pusher_scheme,
+            });
+        },
+    });
+};
+
+const testBroadcastConnection = async () => {
+    isTestingBroadcast.value = true;
+    broadcastTestResult.value = {
+        status: 'testing',
+        message: 'Mengirim broadcast event ke server...',
+    };
+
+    try {
+        const echo = initEcho({
+            driver: integrationForm.driver,
+            key: integrationForm.driver === 'reverb' ? integrationForm.reverb_app_key : integrationForm.pusher_app_key,
+            cluster: integrationForm.pusher_app_cluster,
+            host: integrationForm.reverb_host,
+            port: integrationForm.reverb_port,
+            scheme: integrationForm.driver === 'reverb' ? integrationForm.reverb_scheme : integrationForm.pusher_scheme,
+        });
+
+        if (echo) {
+            const channel = echo.channel('test-channel');
+            channel.listen('.test.connection', (e) => {
+                broadcastTestResult.value = {
+                    status: 'success',
+                    message: e.message || 'Koneksi real-time berhasil diverifikasi!',
+                    receivedAt: e.timestamp || new Date().toLocaleTimeString(),
+                    driver: e.driver || integrationForm.driver,
+                };
+                isTestingBroadcast.value = false;
+            });
+        }
+
+        const res = await window.axios.post(route('settings.integration.test'));
+        if (res.data.status === 'success') {
+            setTimeout(() => {
+                if (broadcastTestResult.value?.status === 'testing') {
+                    broadcastTestResult.value = {
+                        status: 'warning',
+                        message: 'Event terkirim di backend, namun browser belum menerima event. Periksa kembali Key, Cluster/Host, Port, atau pastikan driver aktif.',
+                    };
+                    isTestingBroadcast.value = false;
+                }
+            }, 4500);
+        }
+    } catch (err) {
+        broadcastTestResult.value = {
+            status: 'error',
+            message: err.response?.data?.message || err.message || 'Gagal mengetes koneksi broadcast.',
+        };
+        isTestingBroadcast.value = false;
+    }
+};
 </script>
 
 <template>
@@ -1059,6 +1161,275 @@ const confirmDelete = async () => {
                             </table>
                         </div>
                     </div>
+                </div>
+            </template>
+
+            <!-- TAB: INTEGRASI REAL-TIME (KHUSUS SUPER ADMIN) -->
+            <template v-if="isSuperAdmin" #tabIntegrasi>
+                <div class="max-w-4xl mx-auto space-y-6">
+
+                    <!-- Banner Header Integrasi -->
+                    <div class="bg-gradient-to-br from-slate-900 via-sky-950 to-slate-900 text-white rounded-2xl p-6 shadow-sm border border-slate-700/60 relative overflow-hidden">
+                        <div class="absolute -right-8 -bottom-8 w-56 h-56 bg-sky-500/20 rounded-full blur-3xl pointer-events-none"></div>
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+                            <div>
+                                <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/10 text-sky-300 text-xs font-mono font-bold mb-2">
+                                    <i class="ri-broadcast-line animate-pulse"></i> Real-time WebSockets & Live Dispatcher
+                                </div>
+                                <h3 class="font-black text-xl text-white tracking-tight">Integrasi Real-time & WebSocket</h3>
+                                <p class="text-xs sm:text-sm text-gray-300 mt-1 max-w-xl leading-relaxed">
+                                    Aktifkan koneksi dua arah instan untuk sinkronisasi Handshake Supir, pemantauan Live GPS armada di peta, dan status resi tanpa perlu refresh halaman.
+                                </p>
+                            </div>
+                            <div class="shrink-0 flex flex-col items-start sm:items-end gap-2">
+                                <span class="px-3 py-1.5 rounded-xl bg-white/10 text-xs font-mono border border-white/10 flex items-center gap-2"
+                                      :class="connectionState === 'connected' ? 'text-emerald-300 border-emerald-500/30' : (connectionState === 'connecting' ? 'text-amber-300 border-amber-500/30' : 'text-gray-300')">
+                                    <span class="w-2 h-2 rounded-full"
+                                          :class="connectionState === 'connected' ? 'bg-emerald-400 animate-ping' : (connectionState === 'connecting' ? 'bg-amber-400 animate-pulse' : 'bg-gray-400')"></span>
+                                    <span>Status: <strong class="uppercase">{{ connectionState }}</strong></span>
+                                </span>
+                                <span class="text-[11px] text-gray-400 font-mono">
+                                    Driver Aktif: <strong class="text-white uppercase">{{ integrationForm.driver }}</strong>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Notifikasi / Toast Integrasi -->
+                    <div v-if="integrationToast" class="p-4 rounded-xl border flex items-center justify-between gap-3 text-xs font-medium shadow-sm transition-all"
+                         :class="integrationToast.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-red-50 text-red-800 border-red-200'">
+                        <div class="flex items-center gap-2">
+                            <i class="ri-checkbox-circle-fill text-emerald-600 text-base"></i>
+                            <span>{{ integrationToast.message }}</span>
+                        </div>
+                        <button @click="integrationToast = null" class="text-gray-400 hover:text-gray-600">
+                            <i class="ri-close-line"></i>
+                        </button>
+                    </div>
+
+                    <!-- Pemilihan Layanan Broadcaster (Driver Toggle) -->
+                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 md:p-6 space-y-4">
+                        <div class="border-b border-gray-100 pb-3">
+                            <h4 class="font-bold text-dark text-base">Pilih Layanan WebSocket</h4>
+                            <p class="text-xs text-gray-500 mt-0.5">Pilih penyedia jaringan real-time yang sesuai dengan infrastruktur operasional Anda.</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                            <!-- Option 1: Pusher Channels -->
+                            <div 
+                                @click="integrationForm.driver = 'pusher'"
+                                class="p-4 rounded-2xl border-2 transition-all cursor-pointer relative flex flex-col justify-between"
+                                :class="integrationForm.driver === 'pusher' ? 'border-primary bg-primary/5 shadow-md shadow-primary/10' : 'border-gray-200/70 hover:border-gray-300 bg-white'"
+                            >
+                                <div class="space-y-2">
+                                    <div class="flex items-center justify-between">
+                                        <div class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-xl">
+                                            <i class="ri-cloud-line"></i>
+                                        </div>
+                                        <span v-if="integrationForm.driver === 'pusher'" class="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center text-xs">
+                                            <i class="ri-check-line"></i>
+                                        </span>
+                                    </div>
+                                    <h5 class="font-bold text-dark text-sm">Pusher Channels</h5>
+                                    <p class="text-xs text-gray-500 leading-relaxed">
+                                        Layanan Cloud SaaS resmi tanpa setup daemon. Siap pakai dengan latency rendah di server Singapura (ap1).
+                                    </p>
+                                </div>
+                                <span class="inline-block mt-3 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800 self-start">Rekomendasi Cepat</span>
+                            </div>
+
+                            <!-- Option 2: Laravel Reverb -->
+                            <div 
+                                @click="integrationForm.driver = 'reverb'"
+                                class="p-4 rounded-2xl border-2 transition-all cursor-pointer relative flex flex-col justify-between"
+                                :class="integrationForm.driver === 'reverb' ? 'border-primary bg-primary/5 shadow-md shadow-primary/10' : 'border-gray-200/70 hover:border-gray-300 bg-white'"
+                            >
+                                <div class="space-y-2">
+                                    <div class="flex items-center justify-between">
+                                        <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl">
+                                            <i class="ri-server-line"></i>
+                                        </div>
+                                        <span v-if="integrationForm.driver === 'reverb'" class="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center text-xs">
+                                            <i class="ri-check-line"></i>
+                                        </span>
+                                    </div>
+                                    <h5 class="font-bold text-dark text-sm">Laravel Reverb</h5>
+                                    <p class="text-xs text-gray-500 leading-relaxed">
+                                        WebSocket Mandiri (Self-Hosted) di server VPS Anda. Gratis tanpa batas koneksi serentak (high-traffic).
+                                    </p>
+                                </div>
+                                <span class="inline-block mt-3 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 self-start">Skalabilitas Tinggi</span>
+                            </div>
+
+                            <!-- Option 3: Nonaktif / Log Mode -->
+                            <div 
+                                @click="integrationForm.driver = 'log'"
+                                class="p-4 rounded-2xl border-2 transition-all cursor-pointer relative flex flex-col justify-between"
+                                :class="integrationForm.driver === 'log' ? 'border-primary bg-primary/5 shadow-md shadow-primary/10' : 'border-gray-200/70 hover:border-gray-300 bg-white'"
+                            >
+                                <div class="space-y-2">
+                                    <div class="flex items-center justify-between">
+                                        <div class="w-10 h-10 rounded-xl bg-gray-100 text-gray-600 flex items-center justify-center text-xl">
+                                            <i class="ri-file-text-line"></i>
+                                        </div>
+                                        <span v-if="integrationForm.driver === 'log'" class="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center text-xs">
+                                            <i class="ri-check-line"></i>
+                                        </span>
+                                    </div>
+                                    <h5 class="font-bold text-dark text-sm">Nonaktif (Log Saja)</h5>
+                                    <p class="text-xs text-gray-500 leading-relaxed">
+                                        Event real-time hanya ditulis ke file log lokal. Matikan socket jika sedang dalam pemeliharaan.
+                                    </p>
+                                </div>
+                                <span class="inline-block mt-3 px-2 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-700 self-start">Mode Standar</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Form Kredensial Pusher Channels -->
+                    <div v-if="integrationForm.driver === 'pusher'" class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 md:p-6 space-y-5">
+                        <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg">
+                                    <i class="ri-key-2-line"></i>
+                                </div>
+                                <div>
+                                    <h4 class="font-bold text-dark text-base">Kredensial Pusher Channels</h4>
+                                    <p class="text-xs text-gray-500">Dapatkan kredensial gratis di <a href="https://dashboard.pusher.com" target="_blank" class="text-primary underline font-medium">dashboard.pusher.com</a></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="space-y-1.5">
+                                <label class="text-xs font-bold text-gray-700">App ID <span class="text-red-500">*</span></label>
+                                <input v-model="integrationForm.pusher_app_id" type="text" class="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Contoh: 1948291">
+                            </div>
+
+                            <div class="space-y-1.5">
+                                <label class="text-xs font-bold text-gray-700">App Key <span class="text-red-500">*</span></label>
+                                <input v-model="integrationForm.pusher_app_key" type="text" class="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="Contoh: 8a48b9c1d0e...">
+                            </div>
+
+                            <div class="space-y-1.5">
+                                <label class="text-xs font-bold text-gray-700">App Secret <span class="text-red-500">*</span></label>
+                                <input v-model="integrationForm.pusher_app_secret" type="password" class="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="••••••••••••••••">
+                            </div>
+
+                            <div class="space-y-1.5">
+                                <label class="text-xs font-bold text-gray-700">Cluster</label>
+                                <input v-model="integrationForm.pusher_app_cluster" type="text" class="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="ap1 (Singapore / Indonesia)">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Form Kredensial Laravel Reverb -->
+                    <div v-if="integrationForm.driver === 'reverb'" class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 md:p-6 space-y-5">
+                        <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg">
+                                    <i class="ri-server-line"></i>
+                                </div>
+                                <div>
+                                    <h4 class="font-bold text-dark text-base">Konfigurasi Laravel Reverb Server</h4>
+                                    <p class="text-xs text-gray-500">Jalankan <code class="px-1.5 py-0.5 bg-gray-100 rounded text-gray-700 font-mono">php artisan reverb:start</code> di server host.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div class="space-y-1.5">
+                                <label class="text-xs font-bold text-gray-700">App ID <span class="text-red-500">*</span></label>
+                                <input v-model="integrationForm.reverb_app_id" type="text" class="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="100001">
+                            </div>
+
+                            <div class="space-y-1.5">
+                                <label class="text-xs font-bold text-gray-700">App Key <span class="text-red-500">*</span></label>
+                                <input v-model="integrationForm.reverb_app_key" type="text" class="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="reverb-key-xyz">
+                            </div>
+
+                            <div class="space-y-1.5">
+                                <label class="text-xs font-bold text-gray-700">App Secret <span class="text-red-500">*</span></label>
+                                <input v-model="integrationForm.reverb_app_secret" type="password" class="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="••••••••••••••••">
+                            </div>
+
+                            <div class="space-y-1.5">
+                                <label class="text-xs font-bold text-gray-700">Host Server</label>
+                                <input v-model="integrationForm.reverb_host" type="text" class="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="localhost atau domain.com">
+                            </div>
+
+                            <div class="space-y-1.5">
+                                <label class="text-xs font-bold text-gray-700">Port WebSocket</label>
+                                <input v-model="integrationForm.reverb_port" type="text" class="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="8080">
+                            </div>
+
+                            <div class="space-y-1.5">
+                                <label class="text-xs font-bold text-gray-700">Protokol Skema</label>
+                                <select v-model="integrationForm.reverb_scheme" class="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary">
+                                    <option value="https">HTTPS / WSS (Secure)</option>
+                                    <option value="http">HTTP / WS (Development)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Kotak Uji Coba Koneksi & Tombol Simpan -->
+                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 md:p-6 space-y-4">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+                            <div>
+                                <h4 class="font-bold text-dark text-base">Uji Coba & Verifikasi Koneksi</h4>
+                                <p class="text-xs text-gray-500 mt-0.5">Kirimkan broadcast sinyal tes dari server ke browser untuk memvalidasi konfigurasi socket.</p>
+                            </div>
+
+                            <button 
+                                type="button" 
+                                @click="testBroadcastConnection" 
+                                :disabled="isTestingBroadcast || integrationForm.driver === 'log'"
+                                class="px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-sm"
+                                :class="integrationForm.driver === 'log' ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200'"
+                            >
+                                <i :class="isTestingBroadcast ? 'ri-loader-4-line animate-spin text-sky-600' : 'ri-radar-line text-sky-600'"></i>
+                                <span>{{ isTestingBroadcast ? 'Menguji Sinyal...' : 'Tes Koneksi Real-time' }}</span>
+                            </button>
+                        </div>
+
+                        <!-- Feedback Hasil Tes -->
+                        <div v-if="broadcastTestResult" class="p-4 rounded-xl border text-xs font-medium space-y-1.5"
+                             :class="{
+                                'bg-sky-50 text-sky-800 border-sky-200': broadcastTestResult.status === 'testing',
+                                'bg-emerald-50 text-emerald-800 border-emerald-200': broadcastTestResult.status === 'success',
+                                'bg-amber-50 text-amber-800 border-amber-200': broadcastTestResult.status === 'warning',
+                                'bg-red-50 text-red-800 border-red-200': broadcastTestResult.status === 'error',
+                             }">
+                            <div class="flex items-center gap-2 font-bold">
+                                <i v-if="broadcastTestResult.status === 'testing'" class="ri-loader-4-line animate-spin text-sky-600 text-base"></i>
+                                <i v-else-if="broadcastTestResult.status === 'success'" class="ri-checkbox-circle-fill text-emerald-600 text-base"></i>
+                                <i v-else-if="broadcastTestResult.status === 'warning'" class="ri-alert-line text-amber-600 text-base"></i>
+                                <i v-else class="ri-close-circle-fill text-red-600 text-base"></i>
+                                <span>
+                                    {{ broadcastTestResult.status === 'success' ? 'Verifikasi Berhasil!' : (broadcastTestResult.status === 'testing' ? 'Memproses Uji Coba...' : 'Perhatian') }}
+                                </span>
+                            </div>
+                            <p class="leading-relaxed pl-6">{{ broadcastTestResult.message }}</p>
+                            <p v-if="broadcastTestResult.receivedAt" class="text-[11px] text-emerald-700 pl-6 font-mono">
+                                Waktu diterima browser: {{ broadcastTestResult.receivedAt }} WIB
+                            </p>
+                        </div>
+
+                        <!-- Tombol Submit Simpan -->
+                        <div class="pt-2 flex justify-end">
+                            <button 
+                                type="button" 
+                                @click="submitIntegration" 
+                                :disabled="integrationForm.processing"
+                                class="px-6 py-2.5 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/20 transition-all flex items-center gap-2 text-sm"
+                            >
+                                <i :class="integrationForm.processing ? 'ri-loader-4-line animate-spin' : 'ri-save-3-line'"></i>
+                                <span>{{ integrationForm.processing ? 'Menyimpan...' : 'Simpan Pengaturan Integrasi' }}</span>
+                            </button>
+                        </div>
+                    </div>
+
                 </div>
             </template>
 
