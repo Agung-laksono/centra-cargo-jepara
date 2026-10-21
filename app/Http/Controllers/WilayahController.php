@@ -7,8 +7,70 @@ use Illuminate\Support\Facades\DB;
 
 class WilayahController extends Controller
 {
+    public function __construct()
+    {
+        $this->ensureDatabaseExists();
+    }
+
+    /**
+     * Pastikan database wilayah.sqlite ada dan terisi dari public/wilayah.json jika belum tersedia.
+     */
+    protected function ensureDatabaseExists()
+    {
+        $dbPath = config('database.connections.wilayah.database', database_path('wilayah.sqlite'));
+        if (!file_exists($dbPath) || filesize($dbPath) < 1000) {
+            $jsonPath = public_path('wilayah.json');
+            if (!file_exists($jsonPath)) {
+                return;
+            }
+
+            $dir = dirname($dbPath);
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0755, true);
+            }
+
+            try {
+                $pdo = new \PDO('sqlite:' . $dbPath);
+                $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+                $pdo->exec("PRAGMA synchronous = OFF");
+                $pdo->exec("PRAGMA journal_mode = MEMORY");
+
+                $pdo->exec("CREATE TABLE IF NOT EXISTS regions (id VARCHAR(20) PRIMARY KEY, parent_id VARCHAR(20), name VARCHAR(255), type VARCHAR(50))");
+
+                $data = json_decode(file_get_contents($jsonPath), true);
+                if (is_array($data) && count($data) > 0) {
+                    $pdo->beginTransaction();
+                    $stmt = $pdo->prepare("INSERT INTO regions (id, parent_id, name, type) VALUES (?, ?, ?, ?)");
+                    foreach ($data as $item) {
+                        $stmt->execute([
+                            $item['id'] ?? null,
+                            $item['parent_id'] ?? null,
+                            $item['name'] ?? null,
+                            $item['type'] ?? null
+                        ]);
+                    }
+                    $pdo->commit();
+                }
+
+                $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parent ON regions(parent_id)");
+                $pdo->exec("CREATE INDEX IF NOT EXISTS idx_name ON regions(name COLLATE NOCASE)");
+                $pdo->exec("CREATE INDEX IF NOT EXISTS idx_type ON regions(type)");
+
+                $stmt = null;
+                $pdo = null;
+
+                @chmod($dbPath, 0666);
+                DB::purge('wilayah');
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::warning("Gagal inisialisasi wilayah.sqlite: " . $e->getMessage());
+            }
+        }
+    }
+
     public function search(Request $request)
     {
+        $this->ensureDatabaseExists();
+
         $query = $request->input('q');
         if (!$query || strlen($query) < 3) {
             return response()->json([]);
@@ -51,6 +113,8 @@ class WilayahController extends Controller
 
     public function provinces()
     {
+        $this->ensureDatabaseExists();
+
         $provinces = DB::connection('wilayah')
             ->table('regions')
             ->where('type', 'province')
@@ -62,6 +126,8 @@ class WilayahController extends Controller
 
     public function regencies($provinceId)
     {
+        $this->ensureDatabaseExists();
+
         $regencies = DB::connection('wilayah')
             ->table('regions')
             ->where('type', 'regency')
@@ -74,6 +140,8 @@ class WilayahController extends Controller
 
     public function districts($regencyId)
     {
+        $this->ensureDatabaseExists();
+
         $districts = DB::connection('wilayah')
             ->table('regions')
             ->where('type', 'district')
@@ -86,6 +154,8 @@ class WilayahController extends Controller
 
     public function villages($districtId)
     {
+        $this->ensureDatabaseExists();
+
         $villages = DB::connection('wilayah')
             ->table('regions')
             ->where('type', 'village')
@@ -97,7 +167,7 @@ class WilayahController extends Controller
         if ($villages->isEmpty()) {
             try {
                 $response = \Illuminate\Support\Facades\Http::withOptions(['verify' => false])
-                                                            ->timeout(10)
+                                                            ->timeout(3)
                                                             ->get("https://www.emsifa.com/api-wilayah-indonesia/api/villages/{$districtId}.json");
                 
                 if ($response->successful()) {
@@ -113,12 +183,7 @@ class WilayahController extends Controller
                     }
                     
                     if (count($insertData) > 0) {
-                        DB::connection('wilayah')->table('regions')->insert($insertData);
-                        
-                        // Regenerate wilayah.json in background (optional, but good for offline sync)
-                        // This might slow down response slightly, but it's rare
-                        $allRegions = DB::connection('wilayah')->table('regions')->get();
-                        file_put_contents(public_path('wilayah.json'), json_encode($allRegions));
+                        DB::connection('wilayah')->table('regions')->insertOrIgnore($insertData);
                         
                         // Re-query dari DB
                         $villages = DB::connection('wilayah')
@@ -137,3 +202,4 @@ class WilayahController extends Controller
         return response()->json($villages);
     }
 }
+

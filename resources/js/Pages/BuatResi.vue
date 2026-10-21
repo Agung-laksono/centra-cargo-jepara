@@ -56,12 +56,16 @@ const isWilayahDownloading = ref(false);
 const precacheWilayah = async () => {
     try {
         let cached = await localforage.getItem(DB_WILAYAH);
-        if (!cached) {
+        if (!cached || !Array.isArray(cached) || cached.length === 0) {
             isWilayahDownloading.value = true;
             console.log("Mengunduh Master Data Wilayah (5 MB) untuk Offline Mode...");
             const res = await fetch('/wilayah.json');
-            const data = await res.json();
-            await localforage.setItem(DB_WILAYAH, data);
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    await localforage.setItem(DB_WILAYAH, data);
+                }
+            }
             isWilayahDownloading.value = false;
             console.log("Selesai mengunduh!");
         }
@@ -82,6 +86,22 @@ const getWilayahOffline = async (type, parentId = null) => {
     return filtered.sort((a,b) => a.name.localeCompare(b.name));
 };
 
+// Helper fetch wilayah aman (online API dengan fallback otomatis ke localforage jika offline atau server 500)
+const fetchWilayahData = async (url, offlineType, parentId = null) => {
+    if (navigator.onLine) {
+        try {
+            const res = await fetch(url);
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data)) return data;
+            }
+        } catch (e) {
+            console.warn(`Fallback offline untuk ${url}:`, e);
+        }
+    }
+    return await getWilayahOffline(offlineType, parentId);
+};
+
 const provinces = ref([]);
 const cities = ref([]);
 const districts = ref([]);
@@ -94,16 +114,7 @@ const selectedDistrictId = ref('');
 // Fetch list Provinsi saat komponen dimuat
 onMounted(async () => {
     precacheWilayah();
-    try {
-        if (navigator.onLine) {
-            const res = await fetch('/api/wilayah/provinces');
-            provinces.value = await res.json();
-        } else {
-            provinces.value = await getWilayahOffline('provinces');
-        }
-    } catch (error) {
-        provinces.value = await getWilayahOffline('provinces');
-    }
+    provinces.value = await fetchWilayahData('/api/wilayah/provinces', 'provinces');
 });
 
 // Watcher untuk Provinsi -> Fetch Kota
@@ -113,20 +124,9 @@ watch(selectedProvinceId, async (newId) => {
     form.destination_city = ''; form.destination_district = ''; form.destination_village = '';
     
     if (newId) {
-        // Set nama provinsi ke form
         const prov = provinces.value.find(p => p.id === newId);
         if(prov) form.destination_province = { id: prov.id, name: prov.name };
-        
-        if (navigator.onLine) {
-            try {
-                const res = await fetch(`/api/wilayah/regencies/${newId}`);
-                cities.value = await res.json();
-            } catch(e) {
-                cities.value = await getWilayahOffline('regency', newId);
-            }
-        } else {
-            cities.value = await getWilayahOffline('regency', newId);
-        }
+        cities.value = await fetchWilayahData(`/api/wilayah/regencies/${newId}`, 'regency', newId);
     }
 });
 
@@ -139,17 +139,7 @@ watch(selectedCityId, async (newId) => {
     if (newId) {
         const city = cities.value.find(c => c.id === newId);
         if(city) form.destination_city = { id: city.id, name: city.name };
-        
-        if (navigator.onLine) {
-            try {
-                const res = await fetch(`/api/wilayah/districts/${newId}`);
-                districts.value = await res.json();
-            } catch(e) {
-                districts.value = await getWilayahOffline('district', newId);
-            }
-        } else {
-            districts.value = await getWilayahOffline('district', newId);
-        }
+        districts.value = await fetchWilayahData(`/api/wilayah/districts/${newId}`, 'district', newId);
     }
 });
 
@@ -161,17 +151,7 @@ watch(selectedDistrictId, async (newId) => {
     if (newId) {
         const dist = districts.value.find(d => d.id === newId);
         if(dist) form.destination_district = { id: dist.id, name: dist.name };
-        
-        if (navigator.onLine) {
-            try {
-                const res = await fetch(`/api/wilayah/villages/${newId}`);
-                villages.value = await res.json();
-            } catch(e) {
-                villages.value = await getWilayahOffline('village', newId);
-            }
-        } else {
-            villages.value = await getWilayahOffline('village', newId);
-        }
+        villages.value = await fetchWilayahData(`/api/wilayah/villages/${newId}`, 'village', newId);
     }
 });
 
@@ -212,12 +192,6 @@ import { onUnmounted } from 'vue';
 onMounted(async () => {
     window.addEventListener('online', syncResiToServer);
     syncResiToServer();
-    try {
-        const res = await fetch('/api/wilayah/provinces');
-        provinces.value = await res.json();
-    } catch (error) {
-        console.error("Gagal mengambil data provinsi:", error);
-    }
 });
 
 onUnmounted(() => {
@@ -362,11 +336,21 @@ const searchWilayah = async (event) => {
         return;
     }
     
-    try {
-        if (navigator.onLine) {
+    let loaded = false;
+    if (navigator.onLine) {
+        try {
             const res = await axios.get(route('api.wilayah.search'), { params: { q: query } });
-            wilayahResults.value = res.data;
-        } else {
+            if (Array.isArray(res.data)) {
+                wilayahResults.value = res.data;
+                loaded = true;
+            }
+        } catch(e) {
+            console.warn("Online search gagal, beralih ke offline search", e);
+        }
+    }
+    
+    if (!loaded) {
+        try {
             // Pencarian Offline manual (Mencari di dalam 72.000 baris)
             const allData = await localforage.getItem(DB_WILAYAH) || [];
             const terms = query.toLowerCase().split(' ');
@@ -394,11 +378,11 @@ const searchWilayah = async (event) => {
                     province_name: prov ? prov.name : ''
                 };
             });
+        } catch(e) {
+            console.error("Error offline wilayah search:", e);
         }
-        showWilayahDropdown.value = true;
-    } catch(e) {
-        console.error("Error fetching wilayah:", e);
     }
+    showWilayahDropdown.value = true;
 };
 
 const selectWilayah = (wil) => {
@@ -470,30 +454,11 @@ const toggleLuarJepara = async () => {
         // Mode Jepara-First
         newSenderForm.province = 'JAWA TENGAH';
         newSenderForm.city = 'KABUPATEN JEPARA';
-        
-        if (navigator.onLine) {
-            try {
-                const res = await fetch(`/api/wilayah/districts/${JEPARA_ID}`);
-                senderDistricts.value = await res.json();
-            } catch(e) {
-                senderDistricts.value = await getWilayahOffline('district', JEPARA_ID);
-            }
-        } else {
-            senderDistricts.value = await getWilayahOffline('district', JEPARA_ID);
-        }
+        senderDistricts.value = await fetchWilayahData(`/api/wilayah/districts/${JEPARA_ID}`, 'district', JEPARA_ID);
     } else {
         // Mode Luar Jepara (Tunggu provinces termuat)
         if (provinces.value.length === 0) {
-            if(navigator.onLine) {
-                try {
-                    const res = await fetch('/api/wilayah/provinces');
-                    provinces.value = await res.json();
-                } catch(e) {
-                    provinces.value = await getWilayahOffline('provinces');
-                }
-            } else {
-                provinces.value = await getWilayahOffline('provinces');
-            }
+            provinces.value = await fetchWilayahData('/api/wilayah/provinces', 'provinces');
         }
     }
 };
@@ -515,17 +480,7 @@ const openSenderModal = async () => {
     // Default Mode: Jepara-First
     newSenderForm.province = 'JAWA TENGAH';
     newSenderForm.city = 'KABUPATEN JEPARA';
-    
-    if (navigator.onLine) {
-        try {
-            const res = await fetch(`/api/wilayah/districts/${JEPARA_ID}`);
-            senderDistricts.value = await res.json();
-        } catch(e) {
-            senderDistricts.value = await getWilayahOffline('district', JEPARA_ID);
-        }
-    } else {
-        senderDistricts.value = await getWilayahOffline('district', JEPARA_ID);
-    }
+    senderDistricts.value = await fetchWilayahData(`/api/wilayah/districts/${JEPARA_ID}`, 'district', JEPARA_ID);
 };
 
 watch(senderProvinceId, async (newId) => {
@@ -538,17 +493,7 @@ watch(senderProvinceId, async (newId) => {
     if (newId) {
         const prov = provinces.value.find(p => p.id === newId);
         if(prov) newSenderForm.province = prov.name;
-        
-        if(navigator.onLine) {
-            try {
-                const res = await fetch(`/api/wilayah/regencies/${newId}`);
-                senderCities.value = await res.json();
-            } catch(e) {
-                senderCities.value = await getWilayahOffline('regency', newId);
-            }
-        } else {
-            senderCities.value = await getWilayahOffline('regency', newId);
-        }
+        senderCities.value = await fetchWilayahData(`/api/wilayah/regencies/${newId}`, 'regency', newId);
     }
 });
 
@@ -562,17 +507,7 @@ watch(senderCityId, async (newId) => {
     if (newId) {
         const city = senderCities.value.find(c => c.id === newId);
         if(city) newSenderForm.city = city.name;
-        
-        if(navigator.onLine) {
-            try {
-                const res = await fetch(`/api/wilayah/districts/${newId}`);
-                senderDistricts.value = await res.json();
-            } catch(e) {
-                senderDistricts.value = await getWilayahOffline('district', newId);
-            }
-        } else {
-            senderDistricts.value = await getWilayahOffline('district', newId);
-        }
+        senderDistricts.value = await fetchWilayahData(`/api/wilayah/districts/${newId}`, 'district', newId);
     }
 });
 
@@ -583,17 +518,7 @@ watch(senderDistrictId, async (newId) => {
     if (newId) {
         const dist = senderDistricts.value.find(d => d.id === newId);
         if(dist) newSenderForm.district = dist.name;
-        
-        if(navigator.onLine) {
-            try {
-                const res = await fetch(`/api/wilayah/villages/${newId}`);
-                senderVillages.value = await res.json();
-            } catch(e) {
-                senderVillages.value = await getWilayahOffline('village', newId);
-            }
-        } else {
-            senderVillages.value = await getWilayahOffline('village', newId);
-        }
+        senderVillages.value = await fetchWilayahData(`/api/wilayah/villages/${newId}`, 'village', newId);
     }
 });
 
