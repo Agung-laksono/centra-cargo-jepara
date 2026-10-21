@@ -5,6 +5,7 @@ import AppDrawer from '@/Components/AppDrawer.vue';
 import SwipeableTabs from '@/Components/SwipeableTabs.vue';
 import { useTabCache } from '@/Composables/useTabCache';
 import { useFilterCache } from '@/Composables/useFilterCache';
+import ManifestQrModal from '@/Components/ManifestQrModal.vue';
 
 // Logika scroll untuk menyembunyikan filter & mendeteksi posisi sticky
 const showHeaderScroll = ref(true);
@@ -81,6 +82,13 @@ const filterStatus = ref('semua'); // 'semua' | 'aktif' | 'nonaktif'
 const filterDateFrom = ref('');
 const filterDateTo = ref('');
 const searchRiwayat = ref('');
+const selectedQrManifest = ref(null);
+const isQrModalOpen = ref(false);
+
+const openQrModal = (m) => {
+    selectedQrManifest.value = m;
+    isQrModalOpen.value = true;
+};
 
 const filteredManifests = computed(() => {
     return props.allManifests.filter(m => {
@@ -613,21 +621,43 @@ const hasActiveFilters = computed(() => {
                             <!-- Tindakan -->
                             <div class="px-3.5 sm:px-4 py-3 bg-gray-50/50 border-t border-gray-100 flex items-center justify-between">
                                 <span class="text-xs font-bold text-gray-400">TINDAKAN</span>
-                                <div class="flex gap-2 shrink-0">
+                                <div class="flex items-center gap-1.5 shrink-0">
+                                    <!-- Tombol QR Code Handshake -->
+                                    <button
+                                        type="button"
+                                        @click="openQrModal(manifest)"
+                                        title="Tampilkan QR Code Handshake"
+                                        class="h-8 px-2.5 flex items-center gap-1 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-lg transition-all active:scale-95 cursor-pointer shadow-sm"
+                                    >
+                                        <i class="ri-qr-code-line text-primary text-sm"></i>
+                                        <span>QR</span>
+                                    </button>
+
+                                    <!-- Tombol Cetak Dokumen Surat Tugas -->
+                                    <a
+                                        :href="'/manifest/' + manifest.id + '/print?autoprint=1'"
+                                        target="_blank"
+                                        title="Cetak Surat Tugas Penjemputan (Print)"
+                                        class="h-8 px-2.5 flex items-center gap-1 bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-200 text-xs font-bold rounded-lg transition-all active:scale-95 shadow-sm"
+                                    >
+                                        <i class="ri-printer-line text-gray-600 text-sm"></i>
+                                        <span>Cetak</span>
+                                    </a>
+
                                     <a
                                         v-if="manifest.wa_link"
                                         :href="manifest.wa_link"
                                         target="_blank"
-                                        title="Kirim Ulang WA"
-                                        class="w-8 h-8 flex items-center justify-center bg-green-50 text-green-600 hover:bg-green-500 hover:text-white border border-green-200 text-sm rounded-lg transition-all"
+                                        title="Kirim Ulang WA ke Supir"
+                                        class="w-8 h-8 flex items-center justify-center bg-green-50 text-green-600 hover:bg-green-500 hover:text-white border border-green-200 text-sm rounded-lg transition-all active:scale-95"
                                     >
                                         <i class="ri-whatsapp-fill"></i>
                                     </a>
                                     <a
                                         :href="manifest.magic_url"
                                         target="_blank"
-                                        title="Buka Link Surat Jalan"
-                                        class="w-8 h-8 flex items-center justify-center bg-white border border-gray-200 text-gray-600 hover:border-primary hover:text-primary text-sm rounded-lg transition-all"
+                                        title="Buka Link Layar Supir"
+                                        class="w-8 h-8 flex items-center justify-center bg-white border border-gray-200 text-gray-600 hover:border-primary hover:text-primary text-sm rounded-lg transition-all active:scale-95"
                                     >
                                         <i class="ri-external-link-line"></i>
                                     </a>
@@ -769,6 +799,13 @@ const hasActiveFilters = computed(() => {
                 </div>
             </div>
         </div>
+
+        <!-- MODAL QR CODE HANDSHAKE & PRINT MANIFEST -->
+        <ManifestQrModal
+            :show="isQrModalOpen"
+            :manifest="selectedQrManifest"
+            @close="isQrModalOpen = false"
+        />
 
     </AdminLayout>
 

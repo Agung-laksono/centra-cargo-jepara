@@ -6,6 +6,7 @@ import { useTabCache } from '@/Composables/useTabCache';
 import { stopAllActiveCameraStreams } from '@/Composables/useCameraManager';
 import axios from 'axios';
 import localforage from 'localforage';
+import ManifestQrModal from '@/Components/ManifestQrModal.vue';
 
 // ---------------------------------------------------------
 // PROPS (Data dari Backend)
@@ -25,6 +26,13 @@ const manifestsData = ref([...props.manifests]);
 const warehousesList = ref([...props.warehouses]);
 const loadingMore = ref(false);
 const hasMoreManifests = ref(props.manifests.length >= 10);
+const selectedQrManifest = ref(null);
+const isQrModalOpen = ref(false);
+
+const openQrModal = (m) => {
+    selectedQrManifest.value = m;
+    isQrModalOpen.value = true;
+};
 
 const loadMoreManifests = async () => {
     if (loadingMore.value || !hasMoreManifests.value) return;
@@ -1361,11 +1369,33 @@ const handleScan = (decodedText) => {
                             <p class="text-[9px] text-gray-400 font-bold uppercase">Muatan</p>
                             <p class="text-base font-black text-primary leading-none">{{ manifest.total_koli }} <span class="text-[10px] font-bold text-gray-400">Koli</span></p>
                         </div>
-                        <div class="flex gap-1.5">
-                            <a :href="manifest.type === 'DELIVERY' ? '/supir/lintas?token=' + manifest.token : '/supir/pickup?token=' + manifest.token" target="_blank" class="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs rounded-xl transition-colors flex items-center gap-1 border border-primary/20 shadow-sm active:scale-95">
-                                <i class="ri-external-link-line"></i> Buka Link
+                        <div class="flex flex-wrap items-center gap-1.5">
+                            <!-- Tombol Tampilkan QR Handshake -->
+                            <button 
+                                type="button"
+                                @click="openQrModal(manifest)"
+                                class="px-2.5 py-1.5 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl transition-all flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer"
+                                title="Tampilkan QR Code Handshake untuk di-scan supir"
+                            >
+                                <i class="ri-qr-code-line text-primary"></i>
+                                <span>QR</span>
+                            </button>
+
+                            <!-- Tombol Cetak Dokumen Surat Jalan -->
+                            <a 
+                                :href="'/manifest/' + manifest.id + '/print?autoprint=1'" 
+                                target="_blank"
+                                class="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold text-xs rounded-xl transition-all flex items-center gap-1 border border-gray-200 shadow-sm active:scale-95"
+                                title="Cetak Surat Jalan / Surat Tugas (Print)"
+                            >
+                                <i class="ri-printer-line text-gray-600"></i>
+                                <span>Cetak</span>
                             </a>
-                            <a v-if="manifest.wa_link" :href="manifest.wa_link" target="_blank" class="px-3 py-1.5 bg-[#B89B7D] hover:bg-[#A6886A] text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-1 shadow-sm active:scale-95">
+
+                            <a :href="manifest.type === 'DELIVERY' ? '/supir/lintas?token=' + manifest.token : '/supir/pickup?token=' + manifest.token" target="_blank" class="px-2.5 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary font-bold text-xs rounded-xl transition-colors flex items-center gap-1 border border-primary/20 shadow-sm active:scale-95">
+                                <i class="ri-external-link-line"></i> Link
+                            </a>
+                            <a v-if="manifest.wa_link" :href="manifest.wa_link" target="_blank" class="px-2.5 py-1.5 bg-[#B89B7D] hover:bg-[#A6886A] text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-1 shadow-sm active:scale-95">
                                 <i class="ri-whatsapp-line"></i> WA
                             </a>
                         </div>
@@ -1841,6 +1871,13 @@ const handleScan = (decodedText) => {
                 </div>
             </div>
         </Transition>
+
+        <!-- MODAL QR CODE HANDSHAKE & PRINT MANIFEST -->
+        <ManifestQrModal
+            :show="isQrModalOpen"
+            :manifest="selectedQrManifest"
+            @close="isQrModalOpen = false"
+        />
 
     </div>
 </template>

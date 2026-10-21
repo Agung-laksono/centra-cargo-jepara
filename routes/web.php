@@ -946,6 +946,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
                     'shipments' => $shipments,
                     'magic_url' => $magicUrl,
                     'wa_link' => $waLink,
+                    'token' => $manifest->magic_link_token,
+                    'type' => 'PICKUP',
                 ];
             });
 
@@ -1144,6 +1146,33 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         return response()->json(['manifests' => $manifests]);
     })->name('api.manifests');
+
+    Route::get('/manifest/{id}/print', function ($id) {
+        $manifest = \App\Models\Manifest::with([
+            'driver',
+            'expedition',
+            'originWarehouse',
+            'destinationWarehouse',
+            'kolis.shipment.sender',
+            'kolis.shipment.items',
+        ])->findOrFail($id);
+
+        $shipments = $manifest->kolis
+            ->groupBy(fn ($koli) => $koli->shipment_id)
+            ->map(function ($kolis) {
+                $shipment = $kolis->first()->shipment;
+                return [
+                    'shipment' => $shipment,
+                    'kolis' => $kolis,
+                    'total_koli' => $kolis->count(),
+                ];
+            })->values();
+
+        return view('print-manifest', [
+            'manifest' => $manifest,
+            'shipments' => $shipments,
+        ]);
+    })->name('manifest.print');
 
     Route::post('/manifest', function (Request $request, TrackingService $trackingService) {
         $request->validate([
