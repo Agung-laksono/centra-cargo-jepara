@@ -960,7 +960,7 @@ const financeSummary = computed(() => {
                 <!-- Expanded Search Overlay (Mobile) -->
                 <div v-if="isSearchExpanded" class="md:hidden absolute inset-y-0 left-0 right-0 bg-white z-50 flex items-center px-3 gap-2 shadow-sm animate-fade-in">
                     <i class="ri-search-line text-gray-400"></i>
-                    <input type="text" v-model="searchQuery" placeholder="Cari resi/pengirim..." class="flex-1 border-none bg-transparent outline-none text-sm px-2 focus:ring-0" autofocus>
+                    <input type="text" autocomplete="off" v-model="searchQuery" placeholder="Cari resi/pengirim..." class="flex-1 border-none bg-transparent outline-none text-sm px-2 focus:ring-0" autofocus>
                     <button @click="isSearchExpanded = false" class="p-1 text-gray-400 hover:text-gray-600">
                         <i class="ri-close-line text-lg"></i>
                     </button>
@@ -969,7 +969,7 @@ const financeSummary = computed(() => {
                 <!-- Input Search Dinamis (Desktop) -->
                 <div class="hidden md:block relative animate-fade-in transition-all">
                     <i class="ri-search-line absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                    <input type="text" v-model="searchQuery" placeholder="Cari resi / pengirim..." 
+                    <input type="text" autocomplete="off" v-model="searchQuery" placeholder="Cari resi / pengirim..." 
                            class="pl-9 pr-4 py-1.5 text-sm border border-gray-200 rounded-full focus:ring-primary focus:border-primary w-48 transition-all bg-gray-50 hover:bg-white outline-none shadow-sm" />
                 </div>
                 

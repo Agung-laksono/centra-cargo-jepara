@@ -27,6 +27,69 @@ window.addEventListener('contextmenu', function (e) {
     e.preventDefault();
 });
 
+// ==========================================
+// MATIKAN BROWSER AUTOCOMPLETE SECARA GLOBAL
+// ==========================================
+const disableAutocompleteGlobally = () => {
+    if (typeof document === 'undefined') return;
+
+    // Matikan di semua elemen form
+    const forms = document.querySelectorAll('form');
+    forms.forEach(form => {
+        form.setAttribute('autocomplete', 'off');
+    });
+
+    // Matikan di semua input dan textarea
+    const inputs = document.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea');
+    inputs.forEach(el => {
+        // Jangan timpa password field jika memiliki autocomplete spesifik
+        if (el.type === 'password' && (el.getAttribute('autocomplete') === 'current-password' || el.getAttribute('autocomplete') === 'new-password')) {
+            return;
+        }
+        el.setAttribute('autocomplete', 'off');
+        el.setAttribute('autocorrect', 'off');
+        el.setAttribute('autocapitalize', 'off');
+        el.setAttribute('spellcheck', 'false');
+        el.setAttribute('data-lpignore', 'true');
+        el.setAttribute('data-form-type', 'other');
+    });
+};
+
+if (typeof window !== 'undefined') {
+    window.addEventListener('DOMContentLoaded', disableAutocompleteGlobally);
+
+    // Tangkap saat input difokuskan
+    document.addEventListener('focusin', (e) => {
+        const target = e.target;
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+            if (target.type === 'password' && (target.getAttribute('autocomplete') === 'current-password' || target.getAttribute('autocomplete') === 'new-password')) {
+                return;
+            }
+            target.setAttribute('autocomplete', 'off');
+            target.setAttribute('autocorrect', 'off');
+            target.setAttribute('autocapitalize', 'off');
+            target.setAttribute('spellcheck', 'false');
+            target.setAttribute('data-lpignore', 'true');
+            target.setAttribute('data-form-type', 'other');
+        }
+    }, true);
+
+    // Observer untuk mendeteksi elemen baru yang di-render secara dinamis
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            if (mutation.addedNodes.length > 0) {
+                disableAutocompleteGlobally();
+                break;
+            }
+        }
+    });
+
+    observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+    });
+}
+
 // Tampilkan loading overlay agar tidak terlihat nge-hang
 const showDeepLinkLoader = () => {
     if (!document.getElementById('dl-loader')) {
@@ -186,6 +249,11 @@ const syncThemeForPage = (page) => {
 
 router.on('navigate', (event) => {
     syncThemeForPage(event.detail.page);
+    setTimeout(disableAutocompleteGlobally, 50);
+});
+
+router.on('finish', () => {
+    setTimeout(disableAutocompleteGlobally, 50);
 });
 
 createInertiaApp({

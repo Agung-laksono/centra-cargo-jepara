@@ -87,6 +87,21 @@
         @routes
         @vite(['resources/js/app.js', "resources/js/Pages/{$page['component']}.vue"])
         @inertiaHead
+
+        <script>
+            // Matikan browser autocomplete secara dini sebelum halaman selesai dimuat
+            document.addEventListener('focusin', function(e) {
+                if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+                    if (e.target.type !== 'password' || !e.target.getAttribute('autocomplete')?.includes('password')) {
+                        e.target.setAttribute('autocomplete', 'off');
+                        e.target.setAttribute('autocorrect', 'off');
+                        e.target.setAttribute('autocapitalize', 'off');
+                        e.target.setAttribute('spellcheck', 'false');
+                        e.target.setAttribute('data-lpignore', 'true');
+                    }
+                }
+            }, true);
+        </script>
     </head>
     <body class="font-sans antialiased">
         @inertia
