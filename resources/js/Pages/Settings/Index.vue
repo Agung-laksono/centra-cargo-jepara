@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, computed, onUnmounted } from 'vue';
 import { useForm, router, Link } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import InputError from '@/Components/InputError.vue';
@@ -18,7 +18,6 @@ const props = defineProps({
 });
 
 // -- TAB STATE --
-import { computed } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 const page = usePage();
 const isSuperAdmin = computed(() => page.props.auth?.is_super_admin);
@@ -252,6 +251,7 @@ const updateCheckResult = ref(null);
 const checkError = ref(null);
 
 const isUpdating = ref(false);
+const isUpdateModalOpen = ref(false);
 const currentStep = ref(0);
 const updateProgress = ref(0);
 const updateStatusText = ref('');
@@ -298,14 +298,55 @@ const checkUpdate = async () => {
     }
 };
 
+// Pengunci Navigasi Browser & Tombol Back saat Pembaruan Berlangsung
+const handleBeforeUnload = (e) => {
+    if (isUpdating.value) {
+        e.preventDefault();
+        e.returnValue = 'Pembaruan sistem sedang berlangsung. Jangan tinggalkan halaman ini!';
+        return e.returnValue;
+    }
+};
+
+const handlePopState = () => {
+    if (isUpdating.value) {
+        window.history.pushState(null, '', window.location.href);
+        alert('PERINGATAN KRITIS: Pembaruan sistem sedang berlangsung. Navigasi dan tombol back dikunci sementara demi keamanan data.');
+    }
+};
+
+const lockBrowserNavigation = () => {
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.history.pushState(null, '', window.location.href);
+    window.addEventListener('popstate', handlePopState);
+};
+
+const unlockBrowserNavigation = () => {
+    window.removeEventListener('beforeunload', handleBeforeUnload);
+    window.removeEventListener('popstate', handlePopState);
+};
+
+const closeUpdateModal = () => {
+    if (isUpdating.value && !updateError.value) return;
+    isUpdateModalOpen.value = false;
+    isUpdating.value = false;
+    updateError.value = null;
+    unlockBrowserNavigation();
+};
+
+onUnmounted(() => {
+    unlockBrowserNavigation();
+});
+
 const runManualUpdate = async () => {
     if (!confirm('Apakah Anda yakin ingin memperbarui aplikasi dari GitHub sekarang?\n\nSistem akan otomatis mencadangkan database dan menimpa berkas aplikasi secara aman.')) {
         return;
     }
 
     isUpdating.value = true;
+    isUpdateModalOpen.value = true;
     updateError.value = null;
     updateLogs.value = [];
+    lockBrowserNavigation();
 
     try {
         // Fase 1: Backup
@@ -332,7 +373,7 @@ const runManualUpdate = async () => {
         // Fase 3: Ekstrak & Timpa File Kode
         currentStep.value = 3;
         updateProgress.value = 75;
-        updateStatusText.value = 'Fase 3/4: Mengekstrak paket dan menimpa berkas sistem (proteksi .env & database aman)...';
+        updateStatusText.value = 'Fase 3/4: Mengekstrak paket dan menimpa berkas sistem (Mode Pemeliharaan aktif)...';
         updateLogs.value.push(`[${new Date().toLocaleTimeString()}] Fase 3: Mengekstrak file dan menimpa sistem...`);
         const resStep3 = await window.axios.post(route('settings.update.step'), { step: 3 });
         updateLogs.value.push(`[${new Date().toLocaleTimeString()}] ${resStep3.data.message}`);
@@ -351,13 +392,13 @@ const runManualUpdate = async () => {
         updateStatusText.value = 'Pembaruan Berhasil 100%! Memuat ulang aplikasi...';
 
         setTimeout(() => {
+            unlockBrowserNavigation();
             window.location.reload();
-        }, 2500);
+        }, 2200);
 
     } catch (err) {
         isUpdating.value = false;
-        updateProgress.value = 0;
-        currentStep.value = 0;
+        unlockBrowserNavigation();
         updateError.value = err.response?.data?.message || err.message || 'Terjadi kesalahan pada proses pembaruan.';
         updateLogs.value.push(`[ERROR] ${updateError.value}`);
     }
@@ -1483,43 +1524,6 @@ const confirmDelete = async () => {
                         </div>
 
                     </div>
-
-                    <!-- 4. Progress Pembaruan Real-Time (Saat Update Berjalan) -->
-                    <div v-if="isUpdating || updateLogs.length > 0" class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 md:p-6 space-y-4">
-                        <div class="flex items-center justify-between">
-                            <h4 class="font-bold text-dark text-sm flex items-center gap-2">
-                                <i :class="isUpdating ? 'ri-loader-4-line animate-spin text-primary' : 'ri-terminal-box-line text-gray-600'"></i>
-                                Status Pembaruan Sistem (Tahap {{ currentStep }}/4)
-                            </h4>
-                            <span class="font-mono text-xs font-bold text-primary">{{ updateProgress }}%</span>
-                        </div>
-
-                        <!-- Progress Bar -->
-                        <div class="w-full h-3 bg-gray-100 rounded-full overflow-hidden p-0.5">
-                            <div 
-                                class="h-full bg-gradient-to-r from-emerald-500 to-primary rounded-full transition-all duration-500"
-                                :style="{ width: `${updateProgress}%` }"
-                            ></div>
-                        </div>
-
-                        <p class="text-xs font-medium text-gray-600">
-                            {{ updateStatusText }}
-                        </p>
-
-                        <!-- Error Box jika Gagal -->
-                        <div v-if="updateError" class="p-3 bg-red-50 text-red-700 rounded-xl border border-red-200 text-xs flex items-center gap-2">
-                            <i class="ri-close-circle-fill text-base shrink-0"></i>
-                            <span>{{ updateError }}</span>
-                        </div>
-
-                        <!-- Log Console Terminal -->
-                        <div class="bg-slate-900 rounded-xl p-4 font-mono text-[11px] text-emerald-400 space-y-1 max-h-48 overflow-y-auto">
-                            <div v-for="(log, idx) in updateLogs" :key="idx" class="leading-relaxed">
-                                &gt; {{ log }}
-                            </div>
-                        </div>
-                    </div>
-
                 </div>
             </template>
         </SwipeableTabs>
@@ -1813,6 +1817,102 @@ const confirmDelete = async () => {
                             <i :class="isDeleting ? 'ri-loader-4-line animate-spin' : 'ri-delete-bin-line'"></i>
                             <span>{{ isDeleting ? 'Menghapus...' : 'Hapus Sekarang' }}</span>
                         </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODAL POP-UP PEMBARUAN SISTEM (FULL-SCREEN LOCK OVERLAY) -->
+        <div v-if="isUpdateModalOpen" class="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md select-none">
+            <div class="bg-white rounded-3xl w-full max-w-xl shadow-2xl relative flex flex-col overflow-hidden border border-slate-700/30 animate-in fade-in zoom-in-95 duration-200">
+                <!-- Modal Header -->
+                <div class="px-6 py-5 bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white flex items-center justify-between border-b border-white/10">
+                    <div class="flex items-center gap-3">
+                        <div class="w-11 h-11 rounded-2xl flex items-center justify-center text-xl shrink-0"
+                             :class="updateError ? 'bg-red-500/20 text-red-400 border border-red-500/30' : (updateProgress === 100 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-primary/20 text-emerald-400 border border-emerald-500/30')">
+                            <i :class="updateError ? 'ri-error-warning-fill' : (updateProgress === 100 ? 'ri-checkbox-circle-fill' : 'ri-loader-4-line animate-spin')"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-black text-lg text-white leading-tight">
+                                {{ updateError ? 'Pembaruan Terhenti' : (updateProgress === 100 ? 'Pembaruan Berhasil 100%!' : 'Pembaruan Sistem Sedang Berjalan') }}
+                            </h3>
+                            <p class="text-xs text-gray-300 mt-0.5">
+                                {{ updateError ? 'Terjadi kendala teknis saat proses berlangsung' : `Tahap ${currentStep} dari 4 • Jangan tutup atau navigasi halaman` }}
+                            </p>
+                        </div>
+                    </div>
+                    <span class="font-mono text-xs font-black px-2.5 py-1 rounded-lg bg-white/10 border border-white/10"
+                          :class="updateError ? 'text-red-400' : 'text-emerald-400'">
+                        {{ updateProgress }}%
+                    </span>
+                </div>
+
+                <!-- Modal Body -->
+                <div class="p-6 space-y-5">
+                    <!-- Progress Bar -->
+                    <div class="space-y-2">
+                        <div class="w-full h-3 bg-gray-100 rounded-full overflow-hidden p-0.5 border border-gray-200/50">
+                            <div 
+                                class="h-full rounded-full transition-all duration-500"
+                                :class="updateError ? 'bg-red-500' : 'bg-gradient-to-r from-emerald-500 via-teal-500 to-primary'"
+                                :style="{ width: `${updateProgress}%` }"
+                            ></div>
+                        </div>
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="font-bold text-dark flex items-center gap-1.5">
+                                <i :class="isUpdating ? 'ri-loader-4-line animate-spin text-primary' : 'ri-information-line text-gray-400'"></i>
+                                {{ updateStatusText }}
+                            </span>
+                            <span class="text-gray-400 font-mono text-[11px]">Langkah {{ currentStep }}/4</span>
+                        </div>
+                    </div>
+
+                    <!-- Lock Banner Warning -->
+                    <div class="p-3 bg-amber-50 border border-amber-200/80 rounded-xl flex items-center gap-2.5 text-xs text-amber-900 font-medium">
+                        <i class="ri-lock-line text-base text-amber-600 shrink-0"></i>
+                        <span>Aplikasi dan tombol navigasi dikunci sementara demi mencegah inkonsistensi database.</span>
+                    </div>
+
+                    <!-- Error Alert Box -->
+                    <div v-if="updateError" class="p-4 bg-red-50 text-red-800 rounded-2xl border border-red-200 text-xs space-y-1">
+                        <div class="font-bold flex items-center gap-1.5 text-red-900">
+                            <i class="ri-close-circle-fill text-base text-red-600"></i>
+                            Gagal Memperbarui Sistem
+                        </div>
+                        <p class="font-mono leading-relaxed pl-5">{{ updateError }}</p>
+                    </div>
+
+                    <!-- Terminal Console Log Box -->
+                    <div class="space-y-1.5">
+                        <div class="flex items-center justify-between text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                            <span>Log Terminal Proses</span>
+                            <span class="font-mono text-[10px] text-gray-400">{{ updateLogs.length }} Baris</span>
+                        </div>
+                        <div class="bg-slate-950 rounded-2xl p-4 font-mono text-[11px] text-emerald-400 space-y-1.5 max-h-48 overflow-y-auto border border-slate-800 shadow-inner">
+                            <div v-for="(log, idx) in updateLogs" :key="idx" class="leading-relaxed">
+                                <span class="text-slate-500 select-none">&gt;</span> {{ log }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Modal Footer Actions (Hanya muncul jika Error atau selesai) -->
+                    <div v-if="updateError" class="pt-2 flex justify-end">
+                        <button
+                            type="button"
+                            @click="closeUpdateModal"
+                            class="px-5 py-2.5 rounded-xl font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 transition text-xs shadow-sm flex items-center gap-1.5"
+                        >
+                            <i class="ri-close-line"></i> Tutup & Kembali
+                        </button>
+                    </div>
+
+                    <div v-else-if="updateProgress === 100" class="pt-2 text-center text-xs font-bold text-emerald-600 flex items-center justify-center gap-2 animate-pulse">
+                        <i class="ri-refresh-line animate-spin"></i>
+                        <span>Memuat ulang halaman dalam beberapa detik...</span>
+                    </div>
+
+                    <div v-else class="pt-1 text-center text-[11px] text-gray-400 font-medium">
+                        Harap tidak mematikan daya perangkat atau memutuskan jaringan internet.
                     </div>
                 </div>
             </div>
