@@ -106,8 +106,17 @@ const openManifestScanner = async () => {
     isManifestScannerOpen.value = true;
 };
 
-const handleClaimManifest = async (scannedCode) => {
-    const code = (scannedCode || manualManifestCode.value).trim();
+const reassignModal = ref({
+    show: false,
+    code: '',
+    driverName: '',
+    vehicleName: '',
+    manifestId: '',
+    message: '',
+});
+
+const handleClaimManifest = async (scannedCode, forceReassign = false) => {
+    const code = (scannedCode || manualManifestCode.value || reassignModal.value.code).trim();
     if (!code) return;
 
     try {
@@ -116,7 +125,22 @@ const handleClaimManifest = async (scannedCode) => {
 
         const res = await axios.post('/api/driver/claim-manifest', {
             token: code,
+            force_reassign: forceReassign,
         });
+
+        if (res.data.status === 'confirm_reassign') {
+            reassignModal.value = {
+                show: true,
+                code: code,
+                driverName: res.data.current_driver?.name || 'Supir Lain',
+                vehicleName: res.data.current_driver?.vehicle_name || 'Armada Terdaftar',
+                manifestId: res.data.manifest?.id || '',
+                message: res.data.message || '',
+            };
+            isManifestScannerOpen.value = false;
+            showManualManifestInput.value = false;
+            return;
+        }
 
         if (res.data.status === 'success') {
             if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
@@ -124,6 +148,7 @@ const handleClaimManifest = async (scannedCode) => {
             isManifestScannerOpen.value = false;
             showManualManifestInput.value = false;
             manualManifestCode.value = '';
+            reassignModal.value.show = false;
             
             setTimeout(() => {
                 if (res.data.redirect_url) {
@@ -142,6 +167,10 @@ const handleClaimManifest = async (scannedCode) => {
     } finally {
         isClaimingManifest.value = false;
     }
+};
+
+const confirmReassign = () => {
+    handleClaimManifest(reassignModal.value.code, true);
 };
 
 const onManifestQrScanned = (scannedText) => {
@@ -1250,6 +1279,48 @@ const formatRupiah = (angka) => {
                     >
                         <i v-if="isClaimingManifest" class="ri-loader-4-line animate-spin"></i>
                         <span>{{ isClaimingManifest ? 'Memeriksa...' : 'Ambil Muatan' }}</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </Teleport>
+
+    <!-- Modal Konfirmasi Ambil Alih Tugas (Reassignment) -->
+    <Teleport to="body">
+        <div v-if="reassignModal.show" class="fixed inset-0 z-[250] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+            <div class="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl border border-gray-100">
+                <div class="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center text-2xl mx-auto mb-3 shadow-inner">
+                    <i class="ri-alert-fill"></i>
+                </div>
+                <h4 class="font-black text-center text-base text-gray-900 leading-tight">
+                    Konfirmasi Pengalihan Tugas
+                </h4>
+                <p class="text-xs text-gray-500 text-center mt-2 leading-relaxed">
+                    Surat jalan ini sebelumnya telah dijadwalkan untuk:
+                </p>
+                <div class="mt-2.5 p-3 rounded-2xl bg-gray-50 border border-gray-200 text-center">
+                    <p class="text-xs font-black text-gray-900">{{ reassignModal.driverName }}</p>
+                    <p class="text-[11px] font-semibold text-gray-500 mt-0.5"><i class="ri-truck-line text-gray-400"></i> {{ reassignModal.vehicleName }}</p>
+                </div>
+                <p class="text-[11px] text-amber-800 bg-amber-50 p-2.5 rounded-xl border border-amber-200 mt-3 text-center leading-snug font-medium">
+                    Apakah Anda supir pengganti resmi yang akan mengambil alih muatan ini?
+                </p>
+                <div class="mt-4 flex gap-2">
+                    <button
+                        type="button"
+                        @click="reassignModal.show = false"
+                        class="flex-1 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 active:scale-95 transition cursor-pointer"
+                    >
+                        Batal
+                    </button>
+                    <button
+                        type="button"
+                        @click="confirmReassign"
+                        :disabled="isClaimingManifest"
+                        class="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-md shadow-amber-600/20 active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                        <i v-if="isClaimingManifest" class="ri-loader-4-line animate-spin"></i>
+                        <span>{{ isClaimingManifest ? 'Memproses...' : 'Ya, Ambil Alih' }}</span>
                     </button>
                 </div>
             </div>

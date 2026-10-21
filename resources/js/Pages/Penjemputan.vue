@@ -265,16 +265,19 @@ const filteredPickupList = computed(() => {
     return result;
 });
 
+const driverAssignmentMode = ref('auto'); // 'auto' | 'manual'
+
 const selectedDriver = computed(() => {
     return props.drivers.find(d => d.id === armada.value);
 });
 
 const isFormValid = computed(() => {
-    return selectedDriver.value && area.value && area.value.trim() !== '' && selectedCount.value > 0;
+    const hasDriver = driverAssignmentMode.value === 'auto' || Boolean(selectedDriver.value);
+    return hasDriver && area.value && area.value.trim() !== '' && selectedCount.value > 0;
 });
 
 const kirimRute = () => {
-    if (!selectedDriver.value) {
+    if (driverAssignmentMode.value === 'manual' && !selectedDriver.value) {
         alert("Silakan pilih supir pick-up terlebih dahulu!");
         return;
     }
@@ -302,7 +305,7 @@ const kirimRute = () => {
     });
     
     router.post('/pickup/assign', {
-        driver_id: selectedDriver.value.id,
+        driver_id: driverAssignmentMode.value === 'manual' ? selectedDriver.value?.id : null,
         shipment_ids: shipmentIds,
         koli_ids: koliIds
     }, {
@@ -358,31 +361,70 @@ const hasActiveFilters = computed(() => {
                 
                 <div class="space-y-4">
                     <div>
-                        <div class="flex justify-between items-center mb-2">
-                            <label class="block text-sm font-medium text-gray-700">Supir Pick-up</label>
-                            <button v-if="!selectedDriver" @click="showAddDriver = true" class="text-xs font-bold text-primary hover:text-primaryLight flex items-center gap-1 transition">
-                                <i class="ri-add-circle-fill"></i> Supir Baru
-                            </button>
-                        </div>
-                        
-                        <select v-if="!selectedDriver" v-model="armada" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all shadow-sm">
-                            <option value="">Pilih Supir...</option>
-                            <option v-for="driver in props.drivers" :key="driver.id" :value="driver.id">
-                                {{ driver.name }} ({{ driver.vehicle_name }})
-                            </option>
-                        </select>
-
-                        <div v-else @click="armada = ''" class="p-3 bg-white border border-gray-200 rounded-xl flex items-center justify-between gap-3 animate-fade-in shadow-sm hover:border-primary/50 transition cursor-pointer group" title="Klik untuk mengganti supir">
-                            <div class="flex items-center gap-3">
-                                <img v-if="selectedDriver.avatar_path" :src="`/storage/${selectedDriver.avatar_path}`" class="w-10 h-10 rounded-full shadow-sm object-cover bg-white" alt="Avatar">
-                                <img v-else :src="`https://ui-avatars.com/api/?name=${selectedDriver.name}&background=random&color=fff&rounded=true&bold=true`" class="w-10 h-10 rounded-full shadow-sm bg-white" alt="Avatar">
-                                <div>
-                                    <p class="font-bold text-dark text-sm">{{ selectedDriver.name }}</p>
-                                    <p class="text-xs text-gray-500 font-medium"><i class="ri-truck-fill text-gray-400"></i> {{ selectedDriver.vehicle_name }}</p>
-                                </div>
+                        <!-- Switch/Toggle Penugasan Supir Pickup -->
+                        <div class="mb-3">
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">Penugasan Supir</label>
+                            <div class="grid grid-cols-2 gap-1.5 p-1 bg-gray-100 rounded-xl">
+                                <button 
+                                    type="button"
+                                    @click="driverAssignmentMode = 'auto'; armada = ''"
+                                    class="py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                                    :class="driverAssignmentMode === 'auto' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'"
+                                >
+                                    <i class="ri-qr-scan-2-line text-primary"></i>
+                                    <span>Bebas (Handshake)</span>
+                                </button>
+                                <button 
+                                    type="button"
+                                    @click="driverAssignmentMode = 'manual'"
+                                    class="py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                                    :class="driverAssignmentMode === 'manual' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'"
+                                >
+                                    <i class="ri-user-settings-line text-blue-600"></i>
+                                    <span>Pilih Manual</span>
+                                </button>
                             </div>
-                            <div class="text-xs font-bold text-gray-400 group-hover:text-red-500 transition px-2 py-1 bg-gray-50 rounded-md">
-                                Ubah <i class="ri-arrow-down-s-line"></i>
+                        </div>
+
+                        <!-- Mode Bebas -->
+                        <div v-if="driverAssignmentMode === 'auto'" class="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-2.5 text-xs animate-fadeIn mb-2">
+                            <i class="ri-information-fill text-amber-600 text-base shrink-0 mt-0.5"></i>
+                            <div class="leading-relaxed">
+                                <p class="font-extrabold text-xs text-amber-950">Tentukan via Handshake</p>
+                                <p class="text-[11px] text-amber-800 mt-0.5">
+                                    Surat tugas penjemputan bisa langsung dibuat. Supir armada toko yang memindai QR code akan otomatis menjadi penanggung jawab tugas ini.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Mode Manual -->
+                        <div v-else>
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="block text-sm font-medium text-gray-700">Supir Pick-up <span class="text-red-500">*</span></label>
+                                <button v-if="!selectedDriver" @click="showAddDriver = true" class="text-xs font-bold text-primary hover:text-primaryLight flex items-center gap-1 transition">
+                                    <i class="ri-add-circle-fill"></i> Supir Baru
+                                </button>
+                            </div>
+                            
+                            <select v-if="!selectedDriver" v-model="armada" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all shadow-sm">
+                                <option value="">Pilih Supir...</option>
+                                <option v-for="driver in props.drivers" :key="driver.id" :value="driver.id">
+                                    {{ driver.name }} ({{ driver.vehicle_name }})
+                                </option>
+                            </select>
+
+                            <div v-else @click="armada = ''" class="p-3 bg-white border border-gray-200 rounded-xl flex items-center justify-between gap-3 animate-fade-in shadow-sm hover:border-primary/50 transition cursor-pointer group" title="Klik untuk mengganti supir">
+                                <div class="flex items-center gap-3">
+                                    <img v-if="selectedDriver.avatar_path" :src="`/storage/${selectedDriver.avatar_path}`" class="w-10 h-10 rounded-full shadow-sm object-cover bg-white" alt="Avatar">
+                                    <img v-else :src="`https://ui-avatars.com/api/?name=${selectedDriver.name}&background=random&color=fff&rounded=true&bold=true`" class="w-10 h-10 rounded-full shadow-sm bg-white" alt="Avatar">
+                                    <div>
+                                        <p class="font-bold text-dark text-sm">{{ selectedDriver.name }}</p>
+                                        <p class="text-xs text-gray-500 font-medium"><i class="ri-truck-fill text-gray-400"></i> {{ selectedDriver.vehicle_name }}</p>
+                                    </div>
+                                </div>
+                                <div class="text-xs font-bold text-gray-400 group-hover:text-red-500 transition px-2 py-1 bg-gray-50 rounded-md">
+                                    Ubah <i class="ri-arrow-down-s-line"></i>
+                                </div>
                             </div>
                         </div>
                     </div>

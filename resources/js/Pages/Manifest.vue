@@ -366,13 +366,18 @@ const saveWarehouse = async () => {
     }
 };
 
+const driverAssignmentMode = ref('auto'); // 'auto' (Bebas / Handshake) | 'manual' (Pilih Supir)
+
 const selectedDriver = computed(() =>
     props.drivers.find(d => d.id == form.driver_id)
 );
 
 const isFleetConfigured = computed(() => {
     if (!form.rute || !form.rute.trim()) return false;
-    if (form.ekspedisi === 'Internal') return Boolean(form.driver_id);
+    if (form.ekspedisi === 'Internal') {
+        if (driverAssignmentMode.value === 'auto') return true;
+        return Boolean(form.driver_id);
+    }
     if (form.ekspedisi === 'Vendor') return Boolean(form.vendor_name && form.vendor_name.trim());
     return false;
 });
@@ -382,6 +387,9 @@ const fleetSummaryText = computed(() => {
         return '+ Pilih Supir / Armada';
     }
     if (form.ekspedisi === 'Internal') {
+        if (driverAssignmentMode.value === 'auto') {
+            return `${form.rute} · Bebas (Handshake)`;
+        }
         const d = selectedDriver.value;
         const driverName = d ? d.name : 'Supir';
         return `${form.rute} · ${driverName}`;
@@ -949,7 +957,7 @@ const handleScan = (decodedText) => {
                                     {{ isFleetConfigured ? (form.rute || 'Rute Armada') : 'Armada & Supir' }}
                                 </p>
                                 <p class="text-[11px] font-black truncate leading-tight">
-                                    {{ isFleetConfigured ? (form.ekspedisi === 'Internal' ? (selectedDriver?.name || 'Supir') : ('Vendor ' + (form.vendor_name || ''))) : 'Belum Diatur ▾' }}
+                                    {{ isFleetConfigured ? (form.ekspedisi === 'Internal' ? (driverAssignmentMode === 'auto' ? 'Bebas (Handshake)' : (selectedDriver?.name || 'Supir')) : ('Vendor ' + (form.vendor_name || ''))) : 'Belum Diatur ▾' }}
                                 </p>
                             </div>
                         </div>
@@ -1505,45 +1513,84 @@ const handleScan = (decodedText) => {
                         </div>
 
                         <!-- Supir Internal -->
-                        <div v-if="form.ekspedisi === 'Internal'" class="pt-2 border-t border-gray-100 space-y-2">
-                            <div class="flex justify-between items-center">
-                                <label class="block text-xs font-bold text-gray-700">Pilih Supir <span class="text-red-500">*</span></label>
-                                <button 
-                                    v-if="!selectedDriver" 
-                                    type="button" 
-                                    @click="showAddDriver = true" 
-                                    class="text-xs font-bold text-primary hover:text-primaryLight flex items-center gap-1 cursor-pointer"
-                                >
-                                    <i class="ri-add-circle-fill"></i> Supir Baru
-                                </button>
+                        <div v-if="form.ekspedisi === 'Internal'" class="pt-2 border-t border-gray-100 space-y-3">
+                            <!-- Switch/Toggle Mode Penugasan Supir -->
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-1.5">Penugasan Supir</label>
+                                <div class="grid grid-cols-2 gap-1.5 p-1 bg-gray-100 rounded-xl">
+                                    <button 
+                                        type="button"
+                                        @click="driverAssignmentMode = 'auto'; form.driver_id = ''"
+                                        class="py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                                        :class="driverAssignmentMode === 'auto' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'"
+                                    >
+                                        <i class="ri-qr-scan-2-line text-primary"></i>
+                                        <span>Bebas (Handshake)</span>
+                                    </button>
+                                    <button 
+                                        type="button"
+                                        @click="driverAssignmentMode = 'manual'"
+                                        class="py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                                        :class="driverAssignmentMode === 'manual' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'"
+                                    >
+                                        <i class="ri-user-settings-line text-blue-600"></i>
+                                        <span>Pilih Manual</span>
+                                    </button>
+                                </div>
                             </div>
-                            <select 
-                                v-if="!selectedDriver" 
-                                v-model="form.driver_id" 
-                                class="w-full border border-gray-200 rounded-xl px-3 py-2.5 bg-gray-50 focus:bg-white text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all cursor-pointer font-medium"
-                            >
-                                <option value="">Pilih Supir...</option>
-                                <option v-for="driver in drivers" :key="driver.id" :value="driver.id">
-                                    {{ driver.name }} — {{ driver.vehicle_name }}
-                                </option>
-                            </select>
-                            <div v-else class="flex items-center gap-3 bg-primary/5 border border-primary/20 rounded-xl p-3">
-                                <img v-if="selectedDriver.avatar_path" :src="'/storage/' + selectedDriver.avatar_path" class="w-10 h-10 rounded-full object-cover border-2 border-primary/30 shrink-0">
-                                <div v-else class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                                    <i class="ri-user-line text-primary text-lg"></i>
+
+                            <!-- Mode Bebas / Handshake Pool -->
+                            <div v-if="driverAssignmentMode === 'auto'" class="p-3.5 rounded-2xl bg-amber-50 border border-amber-200/80 text-amber-900 flex items-start gap-2.5 text-xs animate-fadeIn">
+                                <i class="ri-information-fill text-amber-600 text-lg shrink-0 mt-0.5"></i>
+                                <div class="leading-relaxed">
+                                    <p class="font-extrabold text-xs text-amber-950">Pool Armada Terbuka (Handshake)</p>
+                                    <p class="text-[11px] text-amber-800 mt-1 leading-normal">
+                                        Surat jalan bisa langsung dicetak tanpa supir. Siapapun supir resmi yang memindai QR pada surat jalan fisik di gudang akan otomatis ditugaskan.
+                                    </p>
                                 </div>
-                                <div class="flex-1 min-w-0">
-                                    <p class="font-bold text-dark text-sm truncate">{{ selectedDriver.name }}</p>
-                                    <p class="text-xs text-gray-500 truncate">{{ selectedDriver.vehicle_name }}</p>
+                            </div>
+
+                            <!-- Mode Pilih Manual -->
+                            <div v-else class="space-y-2 animate-fadeIn">
+                                <div class="flex justify-between items-center">
+                                    <label class="block text-xs font-bold text-gray-700">Pilih Supir <span class="text-red-500">*</span></label>
+                                    <button 
+                                        v-if="!selectedDriver" 
+                                        type="button" 
+                                        @click="showAddDriver = true" 
+                                        class="text-xs font-bold text-primary hover:text-primaryLight flex items-center gap-1 cursor-pointer"
+                                    >
+                                        <i class="ri-add-circle-fill"></i> Supir Baru
+                                    </button>
                                 </div>
-                                <button 
-                                    type="button" 
-                                    @click="form.driver_id = ''" 
-                                    class="text-gray-400 hover:text-red-500 p-1.5 rounded-lg transition-colors cursor-pointer"
-                                    title="Ganti Supir"
+                                <select 
+                                    v-if="!selectedDriver" 
+                                    v-model="form.driver_id" 
+                                    class="w-full border border-gray-200 rounded-xl px-3 py-2.5 bg-gray-50 focus:bg-white text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all cursor-pointer font-medium"
                                 >
-                                    <i class="ri-close-circle-line text-xl"></i>
-                                </button>
+                                    <option value="">Pilih Supir...</option>
+                                    <option v-for="driver in drivers" :key="driver.id" :value="driver.id">
+                                        {{ driver.name }} — {{ driver.vehicle_name }}
+                                    </option>
+                                </select>
+                                <div v-else class="flex items-center gap-3 bg-primary/5 border border-primary/20 rounded-xl p-3">
+                                    <img v-if="selectedDriver.avatar_path" :src="'/storage/' + selectedDriver.avatar_path" class="w-10 h-10 rounded-full object-cover border-2 border-primary/30 shrink-0">
+                                    <div v-else class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                                        <i class="ri-user-line text-primary text-lg"></i>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <p class="font-bold text-dark text-sm truncate">{{ selectedDriver.name }}</p>
+                                        <p class="text-xs text-gray-500 truncate">{{ selectedDriver.vehicle_name }}</p>
+                                    </div>
+                                    <button 
+                                        type="button" 
+                                        @click="form.driver_id = ''" 
+                                        class="text-gray-400 hover:text-red-500 p-1.5 rounded-lg transition-colors cursor-pointer"
+                                        title="Ganti Supir"
+                                    >
+                                        <i class="ri-close-circle-line text-xl"></i>
+                                    </button>
+                                </div>
                             </div>
                         </div>
 

@@ -342,11 +342,27 @@
             <div>
                 <div class="meta-row">
                     <span class="meta-key">Supir Armada</span>
-                    <span class="meta-val" style="color: #ea580c;">{{ $manifest->driver?->name ?? ($manifest->vendor_name ?? 'Vendor Ekspedisi Luar') }}</span>
+                    <span class="meta-val">
+                        @if ($manifest->driver)
+                            <strong style="color: #ea580c;">{{ $manifest->driver->name }}</strong>
+                        @elseif ($manifest->vendor_name)
+                            <strong>Vendor: {{ $manifest->vendor_name }}</strong>
+                        @else
+                            <span style="color: #ea580c; font-weight: 800; background: #fff7ed; padding: 2px 6px; border-radius: 4px; border: 1px dashed #fdba74;">[ Menunggu Scan Handshake di Gudang ]</span>
+                        @endif
+                    </span>
                 </div>
                 <div class="meta-row">
                     <span class="meta-key">Armada / No. Plat</span>
-                    <span class="meta-val">{{ $manifest->driver?->vehicle_name ?? ($manifest->vendor_resi ? 'Resi Vendor: '.$manifest->vendor_resi : '-') }}</span>
+                    <span class="meta-val">
+                        @if ($manifest->driver)
+                            {{ $manifest->driver->vehicle_name }}
+                        @elseif ($manifest->vendor_resi)
+                            Resi Vendor: {{ $manifest->vendor_resi }}
+                        @else
+                            <span style="color: #64748b; font-style: italic;">(Tercatat otomatis saat supir scan QR)</span>
+                        @endif
+                    </span>
                 </div>
                 <div class="meta-row">
                     <span class="meta-key">No. HP / WA Supir</span>
@@ -453,7 +469,7 @@
             </div>
             <div class="sig-box">
                 <div class="sig-title">Diterima Oleh (Supir Armada)</div>
-                <div class="sig-name">( {{ $manifest->driver?->name ?? 'Supir Armada' }} )</div>
+                <div class="sig-name">( {{ $manifest->driver?->name ?? '............................................' }} )</div>
             </div>
             <div class="sig-box">
                 <div class="sig-title">Verifikasi Keberangkatan</div>

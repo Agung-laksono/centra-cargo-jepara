@@ -964,7 +964,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::post('/pickup/assign', function (Request $request) {
         $request->validate([
-            'driver_id' => 'required|exists:drivers,id',
+            'driver_id' => 'nullable|exists:drivers,id',
             'shipment_ids' => 'required|array',
             'koli_ids' => 'required|array',
         ]);

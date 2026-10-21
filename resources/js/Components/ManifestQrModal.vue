@@ -106,7 +106,9 @@ const handlePrint = () => {
                     <div class="bg-gray-50 rounded-xl p-2.5 border border-gray-100 text-left text-xs mb-4 space-y-1">
                         <div class="flex justify-between items-center text-gray-500 text-[11px]">
                             <span>Supir Armada:</span>
-                            <strong class="text-gray-800">{{ manifest.driver || manifest.driver?.name || 'Belum ditugaskan' }}</strong>
+                            <strong class="text-gray-800">
+                                {{ (manifest.driver && manifest.driver !== 'Vendor') ? (manifest.driver?.name || manifest.driver) : (manifest.vendor_name ? 'Vendor: ' + manifest.vendor_name : 'Bebas (Tentukan via Handshake)') }}
+                            </strong>
                         </div>
                         <div class="flex justify-between items-center text-gray-500 text-[11px]">
                             <span>Total Muatan:</span>

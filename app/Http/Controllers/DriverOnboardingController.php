@@ -361,6 +361,32 @@ class DriverOnboardingController extends Controller
             ], 422);
         }
 
+        // Cek apakah manifest ini sebelumnya sudah ditugaskan ke supir lain
+        if ($manifest->driver_id && $manifest->driver_id !== $driver->id) {
+            $existingDriver = $manifest->driver;
+            $forceReassign = $request->boolean('force_reassign');
+
+            if (!$forceReassign) {
+                $docName = $manifest->manifest_type === 'PICKUP' ? 'Surat Tugas Pickup' : 'Surat Jalan';
+                $existingDriverName = $existingDriver?->name ?? 'Supir Lain';
+                $existingVehicle = $existingDriver?->vehicle_name ?? 'Armada Terdaftar';
+
+                return response()->json([
+                    'status' => 'confirm_reassign',
+                    'message' => "{$docName} #{$manifest->id} sebelumnya ditugaskan ke {$existingDriverName} ({$existingVehicle}). Apakah Anda ingin mengambil alih tugas ini?",
+                    'current_driver' => [
+                        'name' => $existingDriverName,
+                        'vehicle_name' => $existingVehicle,
+                    ],
+                    'manifest' => [
+                        'id' => $manifest->id,
+                        'manifest_type' => $manifest->manifest_type,
+                        'token' => $manifest->magic_link_token,
+                    ],
+                ], 200);
+            }
+        }
+
         // Pasangkan supir dengan manifest ini (Handshake!)
         $manifest->driver_id = $driver->id;
         if (in_array($manifest->status, ['DRAFT', 'PREPARING', 'PENDING', 'STANDBY'])) {
