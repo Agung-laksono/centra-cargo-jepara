@@ -5,6 +5,25 @@ Semua catatan perkembangan, iterasi fitur, perbaikan bug, dan keputusan arsitekt
 
 ---
 
+## [v2.5.0] — 21 Oktober 2026
+### 🌐 Go-Live Produksi & Perencanaan Aplikasi Mobile Lapangan
+- **Deployment Hosting Produksi (cPanel)**:
+  - Aplikasi resmi online dan beroperasi penuh pada domain: `https://cargo.juraganfurniture.com`.
+  - Konfigurasi basis data produksi (SQLite), eksekusi migrasi skema tabel, dan inisialisasi seeder akun awal (`UserSeeder`) serta identitas kargo (`SettingSeeder`).
+  - Penyelarasan aset frontend Vite produksi (`public/build`) dan ekosistem PHP hosting.
+- **Rencana Kerja & Roadmap Aplikasi Supir & Petugas Gudang (Capacitor Android)**:
+  - Penyusunan blueprint terstruktur untuk 3 peran operasional lapangan:
+    1. **Supir Penjemputan (Pickup)**: Alur jemput mebel ke pengrajin, scan muat barcode koli, integrasi navigasi Google Maps, background live GPS tracking, dan sinkronisasi offline-first.
+    2. **Petugas Gudang (Checker Inbound)**: Scan verifikasi koli tiba, sistem deteksi koli tertinggal (`Sebagian di Gudang` vs `Di Gudang`), serta penyusunan koli untuk manifest truk lintas luar kota.
+    3. **Supir Lintas Kota**: Surat jalan digital manifest delivery, pengaturan urutan rute antar-toko dinamis, rekapitulasi penagihan uang COD, scan serah terima barang di tujuan.
+  - **Penyelarasan Role-Based Mobile Navigation**: Pengalihan login otomatis (auto-routing) bagi akun supir dan petugas gudang langsung ke antarmuka kerja masing-masing.
+  - **Spesifikasi Packaging APK Android (Capacitor)**:
+    - Penyelarasan target server URL ke `https://cargo.juraganfurniture.com`.
+    - Pemanfaatan hardware native: Google MLKit Barcode Scanning, Geolocation Service background/foreground, Deep Link scheme `jeparacargo://`.
+    - Pipeline build APK lokal menggunakan Gradle wrapper & Java JBR Android Studio.
+
+---
+
 ## [v2.4.0] — 21 Oktober 2026
 ### 🚀 Pembaruan & Dokumentasi Sistem
 - **Dokumentasi Terpadu Berbasis Tab (`/dokumentasi`)**:

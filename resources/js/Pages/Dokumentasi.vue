@@ -767,6 +767,28 @@
                     <div class="p-6 sm:p-8 space-y-8">
                         <div class="relative pl-6 sm:pl-8 border-l-2 border-amber-200 space-y-10">
 
+                            <!-- Release v2.5.0 -->
+                            <div class="relative">
+                                <div class="absolute -left-[35px] sm:-left-[43px] top-0 w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs ring-4 ring-blue-50 shadow-sm">
+                                    <i class="ri-global-line text-base"></i>
+                                </div>
+                                <div class="bg-blue-50/50 rounded-2xl p-6 border border-blue-200/80 space-y-3">
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                        <div class="flex items-center gap-2">
+                                            <span class="bg-blue-600 text-white font-mono text-xs font-bold px-2.5 py-1 rounded-lg">v2.5.0</span>
+                                            <span class="font-bold text-base text-dark">Go-Live Produksi & Perencanaan Aplikasi Mobile Lapangan</span>
+                                        </div>
+                                        <span class="text-xs text-blue-600 font-semibold bg-blue-100/70 px-2 py-0.5 rounded-full">21 Oktober 2026</span>
+                                    </div>
+                                    <ul class="text-xs text-gray-700 space-y-2 list-disc list-inside leading-relaxed">
+                                        <li><strong>Hosting Produksi Live</strong>: Aplikasi resmi beroperasi di <code class="bg-blue-100/80 px-1 py-0.5 rounded font-mono text-blue-800">https://cargo.juraganfurniture.com</code>, database terintegrasi SQLite, migrasi skema tabel, dan inisialisasi akun login default.</li>
+                                        <li><strong>Roadmap 3 Modul Lapangan</strong>: Pemetaan operasional untuk <strong>Supir Pickup</strong> (jemput mebel pengrajin & offline mode), <strong>Petugas Gudang</strong> (inbound checker koli & audit fisik), dan <strong>Supir Lintas</strong> (surat jalan digital, rute dinamis, & rekonsiliasi COD).</li>
+                                        <li><strong>Penyelarasan Role & Auto-Redirect</strong>: Perancangan login cerdas agar supir dan petugas gudang langsung diarahkan ke layar kerja masing-masing tanpa tersesat di dashboard kantor.</li>
+                                        <li><strong>Arsitektur Packaging APK Capacitor</strong>: Penyelarasan target server URL ke domain produksi, integrasi scanner kamera MLKit, background GPS tracking, dan deep link <code class="bg-gray-200 px-1 py-0.5 rounded font-mono">jeparacargo://</code>.</li>
+                                    </ul>
+                                </div>
+                            </div>
+
                             <!-- Release v2.4.0 -->
                             <div class="relative">
                                 <div class="absolute -left-[35px] sm:-left-[43px] top-0 w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-xs ring-4 ring-emerald-50 shadow-sm">
