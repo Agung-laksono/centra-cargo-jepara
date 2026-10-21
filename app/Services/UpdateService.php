@@ -60,7 +60,8 @@ class UpdateService
         $timestamp = now()->timestamp;
 
         try {
-            $response = Http::withHeaders($this->getHeaders())
+            $response = Http::withoutVerifying()
+                ->withHeaders($this->getHeaders())
                 ->timeout(15)
                 ->get("https://api.github.com/repos/{$repo}/commits/{$branch}?t={$timestamp}");
 
@@ -185,7 +186,8 @@ class UpdateService
             File::delete($this->tempZipPath);
         }
 
-        $response = Http::withHeaders($this->getHeaders())
+        $response = Http::withoutVerifying()
+            ->withHeaders($this->getHeaders())
             ->sink($this->tempZipPath)
             ->timeout(300)
             ->get($zipUrl);
