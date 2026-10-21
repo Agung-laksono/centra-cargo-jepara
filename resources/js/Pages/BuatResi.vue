@@ -237,7 +237,7 @@ const searchSenderQuery = ref('');
 const showSenderDropdown = ref(false);
 
 const handleSenderBlur = () => {
-    setTimeout(() => { showSenderDropdown.value = false; }, 200);
+    setTimeout(() => { showSenderDropdown.value = false; }, 300);
 };
 
 const filteredSenders = computed(() => {
@@ -264,7 +264,7 @@ const searchRecipientQuery = ref('');
 const showRecipientDropdown = ref(false);
 
 const handleRecipientBlur = () => {
-    setTimeout(() => { showRecipientDropdown.value = false; }, 200);
+    setTimeout(() => { showRecipientDropdown.value = false; }, 300);
 };
 
 const filteredRecipients = computed(() => {
@@ -324,7 +324,7 @@ const wilayahResults = ref([]);
 const showWilayahDropdown = ref(false);
 
 const handleWilayahBlur = () => {
-    setTimeout(() => { showWilayahDropdown.value = false; }, 200);
+    setTimeout(() => { showWilayahDropdown.value = false; }, 300);
 };
 
 const searchWilayah = async (event) => {
@@ -635,6 +635,7 @@ const simpanResi = () => {
         searchSenderQuery.value = '';
         searchRecipientQuery.value = '';
         currentStep.value = 1;
+        maxStepReached.value = 1;
         return;
     }
 
@@ -703,6 +704,7 @@ const simpanResi = () => {
             searchSenderQuery.value = '';
             searchRecipientQuery.value = '';
             currentStep.value = 1;
+            maxStepReached.value = 1;
 
             showSuccessAlert.value = true;
         },
@@ -788,6 +790,14 @@ const formatRupiahInput = (field) => {
 const { activeTab, scrollPositions: tabScrollPositions } = useTabCache('jepara_buatresi_active_tab', 'form');
 
 const currentStep = ref(1);
+const maxStepReached = ref(1);
+
+const steps = [
+    { num: 1, title: 'Pengirim', icon: 'ri-store-2-fill' },
+    { num: 2, title: 'Penerima', icon: 'ri-user-location-fill' },
+    { num: 3, title: 'Barang', icon: 'ri-box-3-fill' },
+    { num: 4, title: 'Keuangan', icon: 'ri-wallet-3-fill' },
+];
 
 const searchQuery = ref('');
 const activeFilter = useFilterCache('jepara_buatresi_active_filter', 'Semua');
@@ -872,11 +882,67 @@ const filteredRecentShipments = computed(() => {
     return data;
 });
 
+const isStepComplete = (stepNum) => {
+    if (stepNum === 1) return !!form.sender_id;
+    if (stepNum === 2) return !!form.recipient_name && !!form.recipient_phone && !!selectedProvinceId.value && !!selectedCityId.value && !!selectedDistrictId.value;
+    if (stepNum === 3) return !!form.items[0]?.name && Number(form.items[0]?.qty) > 0 && Number(form.items[0]?.koli_per_item) > 0;
+    if (stepNum === 4) return (form.payment_type === 'PREPAID' || !!form.goods_value) && !!form.freight_fee;
+    return false;
+};
+
 const nextStep = () => {
     if (currentStep.value < 4) {
         currentStep.value++;
+        if (currentStep.value > maxStepReached.value) {
+            maxStepReached.value = currentStep.value;
+        }
     }
 };
+
+const goToStep = (step) => {
+    if (step <= maxStepReached.value) {
+        currentStep.value = step;
+    }
+};
+
+// Summary singkat untuk collapsed card
+const senderSummary = computed(() => {
+    if (!form.sender_id) return null;
+    const sender = props.senders.find(s => s.id === form.sender_id);
+    if (!sender) return null;
+    return {
+        name: sender.business_name,
+        phone: sender.phone,
+        metode: form.metode_pickup === 'PICKUP' ? 'Dijemput Armada' : 'Diantar Pengirim',
+        icon: form.metode_pickup === 'PICKUP' ? 'ri-car-line' : 'ri-walk-line',
+    };
+});
+
+const recipientSummary = computed(() => {
+    if (!form.recipient_name || !selectedProvinceId.value || !selectedCityId.value) return null;
+    const cityName = cities.value.find(c => c.id === selectedCityId.value)?.name || '';
+    const distName = districts.value.find(d => d.id === selectedDistrictId.value)?.name || '';
+    return {
+        name: form.recipient_name,
+        phone: form.recipient_phone,
+        city: cityName,
+        district: distName,
+        village: form.destination_village,
+        address: form.recipient_address,
+    };
+});
+
+const itemsSummary = computed(() => {
+    return form.items.filter(i => i.name).map(i => `${i.name} (${i.koli_per_item || 0} Koli)`).join(', ');
+});
+
+const financeSummary = computed(() => {
+    if (!form.freight_fee) return null;
+    return {
+        type: form.payment_type === 'PREPAID' ? 'Lunas (Prepaid)' : `COD Rp ${form.goods_value || '0'}`,
+        ongkir: `Ongkir Rp ${form.freight_fee}`
+    };
+});
 </script>
 
 <template>
@@ -946,12 +1012,102 @@ const nextStep = () => {
             <form autocomplete='off' @submit.prevent="simpanResi" class="space-y-4 md:space-y-6">
                 
                 <!-- ==========================================
-                     DATA PENGIRIM & PENERIMA
+                     STEPPER PROGRESS BAR DENGAN INFO RINGKASAN
                      ========================================== -->
-                <div class="space-y-6 md:space-y-8">
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3 mb-6">
+                    <button 
+                        v-for="step in steps" 
+                        :key="step.num"
+                        type="button"
+                        @click="step.num <= maxStepReached && goToStep(step.num)"
+                        :disabled="step.num > maxStepReached"
+                        class="p-3 md:p-3.5 rounded-2xl border text-left transition-all duration-200 relative group flex flex-col justify-between"
+                        :class="[
+                            currentStep === step.num 
+                                ? 'bg-white border-[#8B5E34] shadow-md ring-2 ring-[#8B5E34]/20' 
+                                : (step.num <= maxStepReached && isStepComplete(step.num))
+                                    ? 'bg-white border-green-200 hover:border-green-400 hover:shadow-sm cursor-pointer'
+                                    : 'bg-gray-50/70 border-gray-200/60 opacity-60 cursor-not-allowed'
+                        ]"
+                    >
+                        <!-- Baris Atas: Badge Nomor/Centang + Nama Langkah + Status Ubah -->
+                        <div class="flex items-center justify-between gap-1.5 mb-1.5">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <span class="w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 transition-colors"
+                                    :class="[
+                                        currentStep === step.num 
+                                            ? 'bg-[#8B5E34] text-white shadow-sm' 
+                                            : (step.num <= maxStepReached && isStepComplete(step.num))
+                                                ? 'bg-green-600 text-white' 
+                                                : 'bg-gray-200 text-gray-500'
+                                    ]"
+                                >
+                                    <i v-if="(step.num <= maxStepReached && isStepComplete(step.num)) && currentStep !== step.num" class="ri-check-line text-sm font-bold"></i>
+                                    <span v-else>{{ step.num }}</span>
+                                </span>
+                                <span class="font-bold text-xs md:text-sm truncate"
+                                    :class="currentStep === step.num ? 'text-[#8B5E34]' : ((step.num <= maxStepReached && isStepComplete(step.num)) ? 'text-gray-800' : 'text-gray-400')"
+                                >
+                                    {{ step.title }}
+                                </span>
+                            </div>
+                            
+                            <!-- Indikator Ubah / Titik Aktif -->
+                            <span v-if="(step.num <= maxStepReached && isStepComplete(step.num)) && currentStep !== step.num" 
+                                  class="text-[10px] font-bold text-primary group-hover:underline flex items-center gap-0.5 shrink-0 bg-primary/5 px-1.5 py-0.5 rounded-md">
+                                <i class="ri-edit-line text-[10px]"></i> Ubah
+                            </span>
+                            <span v-else-if="currentStep === step.num" class="w-2 h-2 rounded-full bg-[#8B5E34] animate-pulse shrink-0"></span>
+                        </div>
+
+                        <!-- Baris Bawah: Informasi yang Sudah Diinput -->
+                        <div class="text-[11px] leading-tight truncate pl-8">
+                            <!-- Langkah 1: Pengirim -->
+                            <template v-if="step.num === 1">
+                                <span v-if="senderSummary" class="text-gray-600 font-medium truncate block" :title="senderSummary.name + ' · ' + senderSummary.metode">
+                                    <i class="ri-store-2-line text-primary/70"></i> {{ senderSummary.name }}
+                                </span>
+                                <span v-else-if="currentStep === 1" class="text-primary font-medium">Sedang diisi...</span>
+                                <span v-else class="text-gray-400">Belum diisi</span>
+                            </template>
+
+                            <!-- Langkah 2: Penerima -->
+                            <template v-else-if="step.num === 2">
+                                <span v-if="recipientSummary" class="text-gray-600 font-medium truncate block" :title="recipientSummary.name + ' · ' + [recipientSummary.district, recipientSummary.city].filter(Boolean).join(', ')">
+                                    <i class="ri-user-location-line text-blue-500"></i> {{ recipientSummary.name }} <span class="text-gray-400">· {{ recipientSummary.district || recipientSummary.city }}</span>
+                                </span>
+                                <span v-else-if="currentStep === 2" class="text-primary font-medium">Sedang diisi...</span>
+                                <span v-else class="text-gray-400">Belum diisi</span>
+                            </template>
+
+                            <!-- Langkah 3: Barang -->
+                            <template v-else-if="step.num === 3">
+                                <span v-if="itemsSummary && totalKoliKeseluruhan > 0" class="text-gray-600 font-medium truncate block" :title="itemsSummary">
+                                    <i class="ri-box-3-line text-orange-500"></i> {{ totalKoliKeseluruhan }} Koli <span class="text-gray-400">({{ form.items[0]?.name || 'Barang' }})</span>
+                                </span>
+                                <span v-else-if="currentStep === 3" class="text-primary font-medium">Sedang diisi...</span>
+                                <span v-else class="text-gray-400">Belum diisi</span>
+                            </template>
+
+                            <!-- Langkah 4: Keuangan -->
+                            <template v-else-if="step.num === 4">
+                                <span v-if="financeSummary" class="text-gray-600 font-medium truncate block">
+                                    <i class="ri-wallet-3-line text-emerald-500"></i> {{ financeSummary.type }}
+                                </span>
+                                <span v-else-if="currentStep === 4" class="text-primary font-medium">Sedang diisi...</span>
+                                <span v-else class="text-gray-400">Belum diisi</span>
+                            </template>
+                        </div>
+                    </button>
+                </div>
+
+                <!-- ==========================================
+                     FORMULIR PENGISIAN (HANYA LANGKAH AKTIF)
+                     ========================================== -->
+                <div class="space-y-4 md:space-y-6">
                     
                     <!-- Row 1: Pengirim -->
-                    <div v-show="currentStep >= 1" class="space-y-4 transition-all duration-500 relative z-20">
+                    <div v-show="currentStep === 1" class="space-y-4 relative z-20">
                         <div class="bg-white rounded-2xl border border-gray-200/80 shadow-md hover:shadow-lg transition-shadow duration-300 relative">
                             <!-- Aksen Pita Kuning/Orange seperti Titik 1 di screenshot -->
                             <div class="bg-primary/10 px-4 py-3 border-b border-primary/10 flex justify-between items-center rounded-t-2xl">
@@ -996,11 +1152,14 @@ const nextStep = () => {
                                 </div>
                                 
                                 <!-- Dropdown Suggestion -->
-                                <div v-if="showSenderDropdown && filteredSenders.length > 0" class="absolute z-50 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                                <div v-if="showSenderDropdown && filteredSenders.length > 0" 
+                                     @mousedown.prevent
+                                     class="absolute z-50 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-lg max-h-60 overflow-y-auto">
                                     <ul class="py-1">
                                         <li 
                                             v-for="sender in filteredSenders" 
                                             :key="sender.id"
+                                            @mousedown.prevent="selectSender(sender)"
                                             @click="selectSender(sender)"
                                             class="px-4 py-2 hover:bg-primary/5 cursor-pointer flex justify-between items-center border-b border-gray-50 last:border-0"
                                         >
@@ -1012,9 +1171,11 @@ const nextStep = () => {
                                         </li>
                                     </ul>
                                 </div>
-                                <div v-else-if="showSenderDropdown && searchSenderQuery !== ''" class="absolute z-50 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-lg p-4 text-center">
+                                <div v-else-if="showSenderDropdown && searchSenderQuery !== ''" 
+                                     @mousedown.prevent
+                                     class="absolute z-50 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-lg p-4 text-center">
                                     <p class="text-sm text-gray-500 mb-2">Pengirim tidak ditemukan.</p>
-                                    <button type="button" @click="isModalOpen = true" class="text-sm text-primary font-bold hover:underline">+ Tambah Pengirim Baru</button>
+                                    <button type="button" @mousedown.prevent="isModalOpen = true" @click="isModalOpen = true" class="text-sm text-primary font-bold hover:underline">+ Tambah Pengirim Baru</button>
                                 </div>
                             </div>
                             
@@ -1033,18 +1194,17 @@ const nextStep = () => {
                                 <p class="text-[10px] text-gray-500 mt-2">*Catatan: Resi penjemputan akan otomatis masuk ke tugas Supir Pick-up.</p>
                             </div>
                         </div>
-
                         </div>
                         </div>
 
-                    <!-- Tombol Lanjut Pengirim -->
-                    <div v-if="currentStep === 1" class="flex justify-end">
-                        <button @click="nextStep" type="button" :disabled="!form.sender_id" class="w-full sm:w-auto px-8 py-3.5 bg-[#8B5E34] text-white rounded-xl font-bold hover:bg-[#724C2A] transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-1">Lanjut ke Penerima <i class="ri-arrow-right-line"></i></button>
+                        <!-- Tombol Lanjut Pengirim -->
+                        <div class="flex justify-end pt-2">
+                            <button @click="nextStep" type="button" :disabled="!form.sender_id" class="w-full sm:w-auto px-8 py-3.5 bg-[#8B5E34] text-white rounded-xl font-bold hover:bg-[#724C2A] transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-1">Lanjut ke Penerima <i class="ri-arrow-right-line"></i></button>
+                        </div>
                     </div>
-                </div>
                     
                     <!-- Row 2: Penerima -->
-                    <div v-show="currentStep >= 2" class="space-y-4 transition-all duration-500">
+                    <div v-show="currentStep === 2" class="space-y-4 transition-all duration-500">
                         <div class="bg-white rounded-2xl border border-gray-200/80 shadow-md hover:shadow-lg transition-shadow duration-300 relative">
                             <!-- Aksen Pita Biru/Abu seperti di screenshot -->
                             <div class="bg-gray-50/80 px-4 py-3 border-b border-gray-100 flex justify-between items-center">
@@ -1079,9 +1239,11 @@ const nextStep = () => {
                                 </div>
                                 <!-- Dropdown Suggestion -->
                                 <div v-if="showRecipientDropdown && filteredRecipients.length > 0" 
+                                     @mousedown.prevent
                                      class="absolute z-20 w-full mt-2 bg-white border border-gray-100 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
                                     <ul>
                                         <li v-for="recipient in filteredRecipients" :key="recipient.recipient_phone"
+                                            @mousedown.prevent="selectRecipient(recipient)"
                                             @click="selectRecipient(recipient)"
                                             class="px-4 py-3 hover:bg-primary/5 cursor-pointer border-b border-gray-50 last:border-0 transition-colors flex items-center justify-between group">
                                             <div>
@@ -1116,9 +1278,11 @@ const nextStep = () => {
                                     <i class="ri-search-line absolute left-4 top-3.5 text-gray-400 text-lg"></i>
                                     <!-- Dropdown Wilayah -->
                                     <div v-if="showWilayahDropdown && wilayahResults.length > 0" 
+                                         @mousedown.prevent
                                          class="absolute w-full mt-2 bg-white border border-gray-100 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
                                         <ul>
                                             <li v-for="wil in wilayahResults" :key="wil.village_id"
+                                                @mousedown.prevent="selectWilayah(wil)"
                                                 @click="selectWilayah(wil)"
                                                 class="px-4 py-3 hover:bg-primary/5 cursor-pointer border-b border-gray-50 last:border-0 transition-colors">
                                                 <div class="font-bold text-gray-800">{{ wil.village_name }}, {{ wil.district_name }}</div>
@@ -1166,17 +1330,20 @@ const nextStep = () => {
                         </div>
                         </div>
                         </div>
-                    <!-- Tombol Lanjut Penerima -->
-                    <div v-if="currentStep === 2" class="flex justify-end">
-                        <button @click="nextStep" type="button" :disabled="!form.recipient_name || !form.recipient_phone || !selectedProvinceId || !selectedCityId || !selectedDistrictId" class="w-full sm:w-auto px-8 py-3.5 bg-[#8B5E34] text-white rounded-xl font-bold hover:bg-[#724C2A] transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-1">Lanjut ke Barang <i class="ri-arrow-right-line"></i></button>
-                    </div>
-                </div>
 
-                <!-- ==========================================
-                     DETAIL BARANG (ITEMS & MULTI-KOLI)
-                     ========================================== -->
+                        <!-- Tombol Navigasi Penerima -->
+                        <div class="flex justify-between items-center gap-3 pt-2">
+                            <button @click="goToStep(1)" type="button" class="px-5 py-3 border border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-100 flex items-center gap-1.5 transition-all text-sm">
+                                <i class="ri-arrow-left-line"></i> Kembali
+                            </button>
+                            <button @click="nextStep" type="button" :disabled="!form.recipient_name || !form.recipient_phone || !selectedProvinceId || !selectedCityId || !selectedDistrictId" class="px-8 py-3.5 bg-[#8B5E34] text-white rounded-xl font-bold hover:bg-[#724C2A] transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-1 text-sm md:text-base">
+                                Lanjut ke Barang <i class="ri-arrow-right-line"></i>
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- Row 3: Detail Barang -->
-                    <div v-show="currentStep >= 3" class="space-y-4 transition-all duration-500">
+                    <div v-show="currentStep === 3" class="space-y-4 transition-all duration-500">
                         <div class="bg-white rounded-2xl border border-gray-200/80 shadow-md hover:shadow-lg transition-shadow duration-300 relative">
                             <!-- Aksen Pita Biru/Abu seperti di screenshot -->
                             <div class="bg-gray-50/80 px-4 py-3 border-b border-gray-100 flex justify-between items-center">
@@ -1187,153 +1354,161 @@ const nextStep = () => {
                             </div>
                     
                             <div class="p-5 md:p-6 space-y-3">
-                        <!-- Looping Vue (v-for) untuk Items -->
-                        <div v-for="(item, index) in form.items" :key="index" class="bg-gray-50 p-3 md:p-4 rounded-lg border border-gray-200 relative group transition-all">
-                            <div class="flex flex-wrap sm:flex-nowrap gap-2 md:gap-4 items-end">
-                                <div class="w-full sm:w-16 hidden sm:block">
-                                    <label class="block text-xs font-medium text-gray-700 mb-1">Item</label>
-                                    <input autocomplete='off' type="text" :value="index + 1" disabled class="w-full bg-gray-100 border border-gray-300 rounded-lg px-3 py-2 text-center font-bold text-gray-600">
-                                </div>
-                                
-                                <div class="relative w-full sm:flex-1 mt-2 sm:mt-0">
-                                    <label class="block text-xs font-medium text-gray-700 mb-1">Nama Barang <span class="text-red-500">*</span></label>
-                                    <input 
-                                        autocomplete='off' 
-                                        type="text" 
-                                        v-model="item.name" 
-                                        @focus="item.showSuggest = true"
-                                        @input="item.showSuggest = true"
-                                        placeholder="Contoh: Lemari 4 Pintu" 
-                                        class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all"
-                                    >
-                                    <!-- Dropdown Suggestion Kustom -->
-                                    <div v-if="item.showSuggest && filteredItems(item.name).length > 0" 
-                                         class="absolute z-[60] w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto left-0">
-                                        <ul>
-                                            <li v-for="suggest in filteredItems(item.name)" :key="suggest"
-                                                @click="item.name = suggest; item.showSuggest = false"
-                                                class="px-4 py-2.5 hover:bg-primary/5 cursor-pointer border-b border-gray-50 last:border-0 transition-colors">
-                                                <div class="font-medium text-sm text-gray-800">{{ suggest }}</div>
-                                            </li>
-                                        </ul>
-                                    </div>
-                                </div>
-
-                                <div class="w-full sm:w-24 mt-2 sm:mt-0 flex flex-col">
-                                    <div class="flex justify-between items-center mb-1">
-                                        <label class="block text-xs font-medium text-gray-700" title="Satuan barang">Satuan <span class="text-red-500">*</span></label>
-                                    </div>
-                                    <select v-model="item.unit" @change="handleUnitChange(item, index)" class="w-full h-[42px] border border-gray-300 rounded-lg px-2 focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all text-center bg-white cursor-pointer">
-                                        <option value="" disabled selected>Pilih...</option>
-                                        <option v-for="u in units" :key="u" :value="u">{{ u }}</option>
-                                        <option value="ADD_NEW" class="text-primary font-bold bg-primary/5">+ Baru...</option>
-                                    </select>
-                                </div>
-
-                                <div class="w-full sm:w-20 mt-2 sm:mt-0">
-                                    <label class="block text-xs font-medium text-gray-700 mb-1" title="Berapa banyak barang ini?">Jml <span class="text-red-500">*</span></label>
-                                    <input autocomplete='off' type="number" min="0" v-model="item.qty" placeholder="0" class="w-full border border-gray-300 rounded-lg px-2 py-2 focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all text-center">
-                                </div>
-
-                                <div class="w-full sm:w-28 mt-2 sm:mt-0">
-                                    <label class="block text-xs font-medium text-gray-700 mb-1" title="Total fisik koli (kardus/bungkus) untuk barang ini">Total Koli <span class="text-red-500">*</span></label>
-                                    <div class="flex gap-2">
-                                        <input autocomplete='off' type="number" min="0" v-model="item.koli_per_item" placeholder="0" class="w-full border border-gray-300 rounded-lg px-2 py-2 focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all text-center">
+                                <!-- Looping Vue (v-for) untuk Items -->
+                                <div v-for="(item, index) in form.items" :key="index" class="bg-gray-50 p-3 md:p-4 rounded-lg border border-gray-200 relative group transition-all">
+                                    <div class="flex flex-wrap sm:flex-nowrap gap-2 md:gap-4 items-end">
+                                        <div class="w-full sm:w-16 hidden sm:block">
+                                            <label class="block text-xs font-medium text-gray-700 mb-1">Item</label>
+                                            <input autocomplete='off' type="text" :value="index + 1" disabled class="w-full bg-gray-100 border border-gray-300 rounded-lg px-3 py-2 text-center font-bold text-gray-600">
+                                        </div>
                                         
-                                        <!-- Tombol Hapus Item (Muncul jika Items > 1) -->
-                                        <button 
-                                            v-if="form.items.length > 1" 
-                                            @click="hapusItem(index)" 
-                                            type="button" 
-                                            class="px-3 py-2 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white rounded-lg transition-colors border border-red-100 flex items-center justify-center"
-                                            title="Hapus Barang"
-                                        >
-                                            <i class="ri-delete-bin-line"></i>
-                                        </button>
+                                        <div class="relative w-full sm:flex-1 mt-2 sm:mt-0">
+                                            <label class="block text-xs font-medium text-gray-700 mb-1">Nama Barang <span class="text-red-500">*</span></label>
+                                            <input 
+                                                autocomplete='off' 
+                                                type="text" 
+                                                v-model="item.name" 
+                                                @focus="item.showSuggest = true"
+                                                @input="item.showSuggest = true"
+                                                placeholder="Contoh: Lemari 4 Pintu" 
+                                                class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all"
+                                            >
+                                            <!-- Dropdown Suggestion Kustom -->
+                                            <div v-if="item.showSuggest && filteredItems(item.name).length > 0" 
+                                                 @mousedown.prevent
+                                                 class="absolute z-[60] w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto left-0">
+                                                <ul>
+                                                    <li v-for="suggest in filteredItems(item.name)" :key="suggest"
+                                                        @mousedown.prevent="item.name = suggest; item.showSuggest = false"
+                                                        @click="item.name = suggest; item.showSuggest = false"
+                                                        class="px-4 py-2.5 hover:bg-primary/5 cursor-pointer border-b border-gray-50 last:border-0 transition-colors">
+                                                        <div class="font-medium text-sm text-gray-800">{{ suggest }}</div>
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                        </div>
+
+                                        <div class="w-full sm:w-24 mt-2 sm:mt-0 flex flex-col">
+                                            <div class="flex justify-between items-center mb-1">
+                                                <label class="block text-xs font-medium text-gray-700" title="Satuan barang">Satuan <span class="text-red-500">*</span></label>
+                                            </div>
+                                            <select v-model="item.unit" @change="handleUnitChange(item, index)" class="w-full h-[42px] border border-gray-300 rounded-lg px-2 focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all text-center bg-white cursor-pointer">
+                                                <option value="" disabled selected>Pilih...</option>
+                                                <option v-for="u in units" :key="u" :value="u">{{ u }}</option>
+                                                <option value="ADD_NEW" class="text-primary font-bold bg-primary/5">+ Baru...</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="w-full sm:w-20 mt-2 sm:mt-0">
+                                            <label class="block text-xs font-medium text-gray-700 mb-1" title="Berapa banyak barang ini?">Jml <span class="text-red-500">*</span></label>
+                                            <input autocomplete='off' type="number" min="0" v-model="item.qty" placeholder="0" class="w-full border border-gray-300 rounded-lg px-2 py-2 focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all text-center">
+                                        </div>
+
+                                        <div class="w-full sm:w-28 mt-2 sm:mt-0">
+                                            <label class="block text-xs font-medium text-gray-700 mb-1" title="Total fisik koli (kardus/bungkus) untuk barang ini">Total Koli <span class="text-red-500">*</span></label>
+                                            <div class="flex gap-2">
+                                                <input autocomplete='off' type="number" min="0" v-model="item.koli_per_item" placeholder="0" class="w-full border border-gray-300 rounded-lg px-2 py-2 focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all text-center">
+                                                
+                                                <!-- Tombol Hapus Item (Muncul jika Items > 1) -->
+                                                <button 
+                                                    v-if="form.items.length > 1" 
+                                                    @click="hapusItem(index)" 
+                                                    type="button" 
+                                                    class="px-3 py-2 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white rounded-lg transition-colors border border-red-100 flex items-center justify-center"
+                                                    title="Hapus Barang"
+                                                >
+                                                    <i class="ri-delete-bin-line"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Label Total Koli Barang Ini -->
+                                    <div class="mt-3 flex justify-end">
+                                        <span class="text-xs font-medium text-gray-600 bg-white px-3 py-1 rounded-full border border-gray-200 shadow-sm flex items-center gap-1.5">
+                                            <i class="ri-box-3-line text-primary"></i> Koli Barang Ini: <strong class="text-primary font-bold">{{ Number(item.koli_per_item) || 0 }}</strong> Koli
+                                        </span>
                                     </div>
                                 </div>
-                            </div>
-                            
-                            <!-- Label Total Koli Barang Ini -->
-                            <div class="mt-3 flex justify-end">
-                                <span class="text-xs font-medium text-gray-600 bg-white px-3 py-1 rounded-full border border-gray-200 shadow-sm flex items-center gap-1.5">
-                                    <i class="ri-box-3-line text-primary"></i> Koli Barang Ini: <strong class="text-primary font-bold">{{ Number(item.koli_per_item) || 0 }}</strong> Koli
-                                </span>
-                            </div>
-                        </div>
-                        </div>
 
-                        <!-- Ringkasan Total Koli Keseluruhan Resi -->
-                        <div class="mt-4 p-3.5 bg-primary/5 border border-primary/20 rounded-xl flex items-center justify-between shadow-sm">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                                    <i class="ri-stack-line text-lg"></i>
+                                <!-- Ringkasan Total Koli Keseluruhan Resi -->
+                                <div class="mt-4 p-3.5 bg-primary/5 border border-primary/20 rounded-xl flex items-center justify-between shadow-sm">
+                                    <div class="flex items-center gap-2.5">
+                                        <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                                            <i class="ri-stack-line text-lg"></i>
+                                        </div>
+                                        <div>
+                                            <p class="text-xs font-bold text-gray-800">Total Koli Fisik Resi Ini</p>
+                                            <p class="text-[11px] text-gray-500">Jumlah seluruh koli/paket yang akan dicetak labelnya</p>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <span class="text-lg font-black text-primary font-mono">{{ totalKoliKeseluruhan }}</span>
+                                        <span class="text-xs text-gray-600 font-semibold ml-1">Koli</span>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p class="text-xs font-bold text-gray-800">Total Koli Fisik Resi Ini</p>
-                                    <p class="text-[11px] text-gray-500">Jumlah seluruh koli/paket yang akan dicetak labelnya</p>
+
+                                <div class="flex justify-center mt-4 mb-2">
+                                    <button type="button" @click="tambahItem" class="text-sm text-primary font-bold hover:bg-primary/10 bg-primary/5 border border-primary/20 px-6 py-2 rounded-xl transition-all shadow-sm flex items-center gap-2">
+                                        <i class="ri-add-line"></i> Tambah Barang Lagi
+                                    </button>
                                 </div>
-                            </div>
-                            <div class="text-right">
-                                <span class="text-lg font-black text-primary font-mono">{{ totalKoliKeseluruhan }}</span>
-                                <span class="text-xs text-gray-600 font-semibold ml-1">Koli</span>
                             </div>
                         </div>
 
-                        <div class="flex justify-center mt-4 mb-6">
-                            <button type="button" @click="tambahItem" class="text-sm text-primary font-bold hover:bg-primary/10 bg-primary/5 border border-primary/20 px-6 py-2 rounded-xl transition-all shadow-sm flex items-center gap-2">
-                                <i class="ri-add-line"></i> Tambah Barang Lagi
+                        <!-- Tombol Navigasi Barang -->
+                        <div class="flex justify-between items-center gap-3 pt-2">
+                            <button @click="goToStep(2)" type="button" class="px-5 py-3 border border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-100 flex items-center gap-1.5 transition-all text-sm">
+                                <i class="ri-arrow-left-line"></i> Kembali
+                            </button>
+                            <button @click="nextStep" type="button" :disabled="!form.items[0].name || !form.items[0].qty || form.items[0].qty < 1 || !form.items[0].koli_per_item || form.items[0].koli_per_item < 1" class="px-8 py-3.5 bg-[#8B5E34] text-white rounded-xl font-bold hover:bg-[#724C2A] transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-1 text-sm md:text-base">
+                                Lanjut ke Keuangan <i class="ri-arrow-right-line"></i>
                             </button>
                         </div>
-                        </div>
-                    <!-- Tombol Lanjut Barang -->
-                    <div v-if="currentStep === 3" class="flex justify-end">
-                        <button @click="nextStep" type="button" :disabled="!form.items[0].name || !form.items[0].qty || form.items[0].qty < 1 || !form.items[0].koli_per_item || form.items[0].koli_per_item < 1" class="w-full sm:w-auto px-8 py-3.5 bg-[#8B5E34] text-white rounded-xl font-bold hover:bg-[#724C2A] transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-1">Lanjut ke Keuangan <i class="ri-arrow-right-line"></i></button>
                     </div>
-                </div>
 
-                <!-- ==========================================
-                     KEUANGAN
-                     ========================================== -->
-                <div v-show="currentStep >= 4" class="bg-white rounded-2xl border border-gray-200/80 shadow-md hover:shadow-lg transition-shadow duration-300 relative transition-all duration-500">
-                    <div class="bg-gray-50/80 px-4 py-3 border-b border-gray-100 flex justify-between items-center">
-                        <div class="flex items-center gap-2">
-                            <span class="bg-gray-200 text-gray-700 text-[10px] font-bold px-2 py-0.5 rounded shadow-sm">LANGKAH 4</span>
-                            <h3 class="font-bold text-dark text-sm md:text-base flex items-center gap-1.5"><i class="ri-wallet-3-fill text-gray-600"></i> Keuangan (Borongan)</h3>
+                    <!-- Row 4: Keuangan -->
+                    <div v-show="currentStep === 4" class="space-y-4 transition-all duration-500">
+                        <div class="bg-white rounded-2xl border border-gray-200/80 shadow-md hover:shadow-lg transition-shadow duration-300 relative">
+                            <div class="bg-gray-50/80 px-4 py-3 border-b border-gray-100 flex justify-between items-center">
+                                <div class="flex items-center gap-2">
+                                    <span class="bg-gray-200 text-gray-700 text-[10px] font-bold px-2 py-0.5 rounded shadow-sm">LANGKAH 4</span>
+                                    <h3 class="font-bold text-dark text-sm md:text-base flex items-center gap-1.5"><i class="ri-wallet-3-fill text-gray-600"></i> Keuangan (Borongan)</h3>
+                                </div>
+                            </div>
+                            <div class="p-5 md:p-6 grid gap-4 md:gap-6" :class="form.payment_type === 'PREPAID' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-3'">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Tipe Pembayaran</label>
+                                    <select v-model="form.payment_type" class="w-full bg-gray-50 border border-gray-200 text-gray-800 rounded-xl px-4 py-3 focus:bg-white focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all">
+                                        <option value="COD">COD (Ditagih Supir)</option>
+                                        <option value="PREPAID">LUNAS (Prepaid)</option>
+                                    </select>
+                                </div>
+                                <div v-if="form.payment_type !== 'PREPAID'">
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Tagihan (Rp) <span class="text-red-500">*</span></label>
+                                    <input autocomplete='off' type="text" v-model="form.goods_value" @input="formatRupiahInput('goods_value')" placeholder="2.000.000" class="w-full bg-gray-50 border border-gray-200 text-gray-800 rounded-xl px-4 py-3 focus:bg-white focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Ongkos Kirim (Rp) <span class="text-red-500">*</span></label>
+                                    <input autocomplete='off' type="text" v-model="form.freight_fee" @input="formatRupiahInput('freight_fee')" placeholder="500.000" class="w-full bg-gray-50 border border-gray-200 text-gray-800 rounded-xl px-4 py-3 font-bold text-dark focus:bg-white focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all">
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                    <div class="p-5 md:p-6 grid gap-4 md:gap-6" :class="form.payment_type === 'PREPAID' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-3'">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Tipe Pembayaran</label>
-                            <select v-model="form.payment_type" class="w-full bg-gray-50 border border-gray-200 text-gray-800 rounded-xl px-4 py-3 focus:bg-white focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all">
-                                <option value="COD">COD (Ditagih Supir)</option>
-                                <option value="PREPAID">LUNAS (Prepaid)</option>
-                            </select>
-                        </div>
-                        <div v-if="form.payment_type !== 'PREPAID'">
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Tagihan (Rp) <span class="text-red-500">*</span></label>
-                            <input autocomplete='off' type="text" v-model="form.goods_value" @input="formatRupiahInput('goods_value')" placeholder="2.000.000" class="w-full bg-gray-50 border border-gray-200 text-gray-800 rounded-xl px-4 py-3 focus:bg-white focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Ongkos Kirim (Rp) <span class="text-red-500">*</span></label>
-                            <input autocomplete='off' type="text" v-model="form.freight_fee" @input="formatRupiahInput('freight_fee')" placeholder="500.000" class="w-full bg-gray-50 border border-gray-200 text-gray-800 rounded-xl px-4 py-3 font-bold text-dark focus:bg-white focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all">
-                        </div>
-                    </div>
-                </div>
-                </div>
 
-                <!-- ==========================================
-                     TOMBOL SUBMIT
-                     ========================================== -->
-                <div v-show="currentStep >= 4 && (form.payment_type === 'PREPAID' || form.goods_value) && form.freight_fee" class="pt-6 flex justify-end transition-all duration-500">
-                    <!-- Tombol mirip seperti "Akhiri Perjalanan" di screenshot -->
-                    <button type="submit" class="w-full px-6 py-4 bg-[#1F2937] text-white rounded-xl font-bold hover:bg-gray-800 flex items-center justify-center gap-2 shadow-xl hover:shadow-2xl transition-all transform hover:-translate-y-1 text-lg">
-                        <i class="ri-check-double-line"></i> Simpan Resi & Cetak Label
-                    </button>
+                        <!-- Tombol Navigasi Keuangan & Submit -->
+                        <div class="flex flex-col sm:flex-row justify-between items-center gap-3 pt-4">
+                            <button @click="goToStep(3)" type="button" class="w-full sm:w-auto px-6 py-3.5 border border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-100 flex items-center justify-center gap-2 transition-all text-sm">
+                                <i class="ri-arrow-left-line"></i> Kembali ke Barang
+                            </button>
+                            <button v-show="(form.payment_type === 'PREPAID' || form.goods_value) && form.freight_fee" type="submit" class="w-full sm:w-auto px-8 py-4 bg-[#1F2937] text-white rounded-xl font-bold hover:bg-gray-800 flex items-center justify-center gap-2 shadow-xl hover:shadow-2xl transition-all transform hover:-translate-y-1 text-base md:text-lg">
+                                <i class="ri-check-double-line"></i> Simpan Resi & Cetak Label
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </form>
         </div>
-            </template>
+    </template>
             <template #list>
                 <!-- ==========================================
                      DAFTAR RESI TERBARU
@@ -1607,3 +1782,25 @@ const nextStep = () => {
 
     </AdminLayout>
 </template>
+
+<style scoped>
+.step-card-enter-active,
+.step-card-leave-active {
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.step-card-enter-from,
+.step-card-leave-to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+}
+
+.step-form-enter-active,
+.step-form-leave-active {
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.step-form-enter-from,
+.step-form-leave-to {
+    opacity: 0;
+    transform: translateY(12px);
+}
+</style>
