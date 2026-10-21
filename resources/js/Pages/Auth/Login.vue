@@ -242,6 +242,17 @@ const quickLogin = (email) => {
                     </button>
                 </form>
 
+                <!-- Tombol Daftar Mandiri Supir Baru -->
+                <div class="driver-register-card">
+                    <div class="driver-register-info">
+                        <span class="driver-register-title">Supir Armada Baru?</span>
+                        <span class="driver-register-desc">Daftar mandiri & bawa muatan</span>
+                    </div>
+                    <Link :href="route('register.driver')" class="btn-driver-register">
+                        <i class="ri-steering-2-line"></i> Daftar Supir
+                    </Link>
+                </div>
+
                 <!-- Tombol trigger quick login -->
                 <div v-if="users.length > 0" class="quick-trigger-row">
                     <div class="divider-line"></div>
@@ -680,6 +691,56 @@ const quickLogin = (email) => {
     font-size: 11px;
     color: #9ca3af;
     font-weight: 500;
+}
+
+/* Driver Register Card */
+.driver-register-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: #f8fafc;
+    border: 1.5px dashed #cbd5e1;
+    border-radius: 14px;
+    padding: 10px 14px;
+    margin-top: 16px;
+    transition: all 0.2s ease;
+}
+.driver-register-card:hover {
+    border-color: rgb(var(--color-primary));
+    background: rgba(var(--color-primary), 0.03);
+}
+.driver-register-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.driver-register-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1e293b;
+}
+.driver-register-desc {
+    font-size: 11px;
+    color: #64748b;
+}
+.btn-driver-register {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #1e293b;
+    color: white;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 8px 12px;
+    border-radius: 10px;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+}
+.btn-driver-register:hover {
+    background: black;
+    transform: translateY(-1px);
 }
 
 /* Form fields */

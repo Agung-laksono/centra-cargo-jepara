@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
+import ExpeditionHandshakeModal from '@/Components/ExpeditionHandshakeModal.vue';
 
 const props = defineProps({
     expeditions: Array,
@@ -9,6 +10,13 @@ const props = defineProps({
 
 const isModalOpen = ref(false);
 const editingExpedition = ref(null);
+const isQrModalOpen = ref(false);
+const selectedQrExpeditionId = ref(null);
+
+const openQrModal = (exp) => {
+    selectedQrExpeditionId.value = exp.id;
+    isQrModalOpen.value = true;
+};
 
 const form = useForm({
     name: '',
@@ -136,6 +144,13 @@ const deleteExpedition = (expedition) => {
 
                     <div class="p-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
                         <button
+                            @click="openQrModal(exp)"
+                            class="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition flex items-center gap-1"
+                            title="Tampilkan QR Kemitraan Armada Supir"
+                        >
+                            <i class="ri-qr-code-line"></i> QR Kemitraan
+                        </button>
+                        <button
                             @click="openEditModal(exp)"
                             class="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition flex items-center gap-1"
                         >
@@ -243,5 +258,11 @@ const deleteExpedition = (expedition) => {
                 </form>
             </div>
         </div>
+        <!-- Modal QR Kemitraan Ekspedisi -->
+        <ExpeditionHandshakeModal
+            :show="isQrModalOpen"
+            :expedition-id="selectedQrExpeditionId"
+            @close="isQrModalOpen = false"
+        />
     </AdminLayout>
 </template>

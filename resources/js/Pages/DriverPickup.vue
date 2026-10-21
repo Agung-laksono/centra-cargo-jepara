@@ -7,11 +7,14 @@ import axios from 'axios';
 import { useLocationTracking } from '@/Composables/useLocationTracking';
 import { Fullscreen } from '@boengli/capacitor-fullscreen';
 import { StatusBar } from '@capacitor/status-bar';
+import DriverProfileModal from '@/Components/DriverProfileModal.vue';
 
 const props = defineProps({
     manifest: Object,
     pickups: Array,
 });
+
+const isProfileModalOpen = ref(false);
 
 // Audio Beep Effect via Web Audio API
 const playBeep = (type = 'success') => {
@@ -383,10 +386,22 @@ const selesaikanJemput = (auto = false, force = false) => {
                     </div>
                 </div>
 
-                <!-- Badge Status Pickup -->
-                <div class="flex items-center gap-1.5 bg-primary/20 text-primary px-3 py-1 rounded-full font-black text-[10px] tracking-wider uppercase border border-primary/30 backdrop-blur-md">
-                    <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
-                    <span>Jemput Toko</span>
+                <div class="flex items-center gap-2">
+                    <!-- Badge Status Pickup -->
+                    <div class="flex items-center gap-1.5 bg-primary/20 text-primary px-2.5 py-1 rounded-full font-black text-[10px] tracking-wider uppercase border border-primary/30 backdrop-blur-md">
+                        <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+                        <span>Jemput Toko</span>
+                    </div>
+
+                    <!-- Tombol Profil & Logout -->
+                    <button 
+                        type="button" 
+                        @click="isProfileModalOpen = true"
+                        class="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 flex items-center justify-center text-white active:scale-95 transition-all shadow-sm"
+                        title="Profil & Pengaturan Akun"
+                    >
+                        <i class="ri-user-3-line text-sm"></i>
+                    </button>
                 </div>
             </div>
             
@@ -399,10 +414,17 @@ const selesaikanJemput = (auto = false, force = false) => {
                     </h2>
                 </div>
 
-                <div class="flex items-center gap-1.5 text-xs font-semibold bg-white/10 px-2.5 py-1.5 rounded-xl border border-white/15 backdrop-blur-sm text-gray-200">
-                    <i class="ri-steering-2-line text-primary"></i>
-                    <span class="truncate max-w-[120px]">{{ activeManifest.driver_name }}</span>
-                </div>
+                <!-- Tombol Badge Supir Interaktif -->
+                <button
+                    type="button"
+                    @click="isProfileModalOpen = true"
+                    class="flex items-center gap-1.5 text-xs font-semibold bg-white/10 hover:bg-white/20 active:scale-95 px-2.5 py-1.5 rounded-xl border border-white/15 backdrop-blur-sm text-gray-200 transition-all cursor-pointer shadow-sm group"
+                    title="Buka Info Profil & Keluar Aplikasi"
+                >
+                    <i class="ri-steering-2-line text-primary group-hover:scale-110 transition-transform"></i>
+                    <span class="truncate max-w-[120px] font-bold text-white">{{ activeManifest.driver_name }}</span>
+                    <i class="ri-arrow-down-s-line text-gray-400 group-hover:text-white text-xs"></i>
+                </button>
             </div>
         </header>
 
@@ -777,6 +799,14 @@ const selesaikanJemput = (auto = false, force = false) => {
         </Transition>
 
     </div>
+
+    <!-- Modal Profil & Akun Supir -->
+    <DriverProfileModal
+        :show="isProfileModalOpen"
+        :manifest="activeManifest"
+        driver-role="DRIVER_PICKUP"
+        @close="isProfileModalOpen = false"
+    />
 
     <!-- Latar Belakang Navigation Bar Android Bawah Sesuai Warna Theme -->
     <div class="fixed bottom-0 left-0 right-0 h-[40px] bg-primary z-[100] transition-colors"></div>

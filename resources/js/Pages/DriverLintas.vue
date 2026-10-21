@@ -8,11 +8,14 @@ import axios from 'axios';
 import { useLocationTracking } from '@/Composables/useLocationTracking';
 import { Fullscreen } from '@boengli/capacitor-fullscreen';
 import { StatusBar } from '@capacitor/status-bar';
+import DriverProfileModal from '@/Components/DriverProfileModal.vue';
 
 const props = defineProps({
     manifest: Object,
     deliveries: Array,
 });
+
+const isProfileModalOpen = ref(false);
 
 // Gunakan props jika ada, atau fallback ke simulasi jika sedang dipreview
 const getInitialPengantaran = () => {
@@ -421,8 +424,18 @@ const formatRupiah = (angka) => {
                     </div>
                     <h1 class="font-bold text-base tracking-wide">{{ $page.props.company?.name || 'Aplikasi Cargo' }}</h1>
                 </div>
-                <div class="text-[9px] bg-white/20 px-2.5 py-1 rounded-full font-bold tracking-widest uppercase border border-white/20 backdrop-blur-md">
-                    Tugas Lintas
+                <div class="flex items-center gap-2">
+                    <div class="text-[9px] bg-white/20 px-2.5 py-1 rounded-full font-bold tracking-widest uppercase border border-white/20 backdrop-blur-md">
+                        Tugas Lintas
+                    </div>
+                    <button
+                        type="button"
+                        @click="isProfileModalOpen = true"
+                        class="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 border border-white/25 flex items-center justify-center text-white active:scale-95 transition-all shadow-sm"
+                        title="Profil & Akun Supir"
+                    >
+                        <i class="ri-user-3-line text-xs"></i>
+                    </button>
                 </div>
             </div>
             
@@ -430,10 +443,16 @@ const formatRupiah = (angka) => {
                 <p class="text-[10px] text-white/80 font-medium uppercase tracking-wider mb-0.5">Manifest Perjalanan</p>
                 <h2 class="text-2xl font-black tracking-tight drop-shadow-sm">MNF-{{ activeManifest.id }}</h2>
                 <div class="flex flex-wrap gap-1.5 mt-2">
-                    <div class="flex items-center gap-1.5 text-xs font-medium bg-black/10 px-2 py-1 rounded border border-white/10 backdrop-blur-sm">
-                        <i class="ri-user-star-fill text-white/90"></i>
+                    <button
+                        type="button"
+                        @click="isProfileModalOpen = true"
+                        class="flex items-center gap-1.5 text-xs font-medium bg-black/20 hover:bg-black/35 active:scale-95 px-2 py-1 rounded border border-white/20 backdrop-blur-sm text-white transition-all cursor-pointer shadow-sm group"
+                        title="Buka Info Profil & Keluar Aplikasi"
+                    >
+                        <i class="ri-user-star-fill text-white/90 group-hover:scale-110 transition-transform"></i>
                         <span>{{ activeManifest.driver_name }}</span>
-                    </div>
+                        <i class="ri-arrow-down-s-line text-white/60 group-hover:text-white text-xs"></i>
+                    </button>
                     <div v-if="totalTagihanCod > 0" class="flex items-center gap-1.5 text-xs font-bold bg-green-500/20 text-green-100 px-2 py-1 rounded border border-green-400/30 backdrop-blur-sm shadow-inner">
                         <i class="ri-money-dollar-circle-fill text-green-300 text-sm"></i>
                         <span>COD: {{ formatRupiah(tagihanTerkumpul) }} / {{ formatRupiah(totalTagihanCod) }}</span>
@@ -770,6 +789,14 @@ const formatRupiah = (angka) => {
         </Transition>
 
     </div>
+
+    <!-- Modal Profil & Akun Supir -->
+    <DriverProfileModal
+        :show="isProfileModalOpen"
+        :manifest="activeManifest"
+        driver-role="DRIVER_LINTAS"
+        @close="isProfileModalOpen = false"
+    />
 
     <!-- Latar Belakang Navigation Bar Android -->
     <div class="fixed bottom-0 left-0 right-0 h-[40px] bg-primary z-[100]"></div>

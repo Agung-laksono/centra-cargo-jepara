@@ -9,6 +9,7 @@ class Expedition extends Model
     protected $fillable = [
         'name',
         'domain_slug',
+        'partnership_token',
         'receipt_code',
         'tagline',
         'address',
@@ -17,6 +18,13 @@ class Expedition extends Model
         'logo_url',
         'is_active',
     ];
+
+    public function partnerDrivers()
+    {
+        return $this->belongsToMany(Driver::class, 'driver_expeditions')
+            ->withPivot(['status', 'role', 'partnered_at'])
+            ->withTimestamps();
+    }
 
     public function users()
     {

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ExpeditionController;
 use App\Http\Controllers\BiometricAuthController;
+use App\Http\Controllers\DriverOnboardingController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SenderController;
 use App\Http\Controllers\SettingController;
@@ -51,12 +52,21 @@ Route::get('/supir', function () {
     return redirect()->route('mobile.gateway');
 });
 
+// Pendaftaran Mandiri Supir & Handshake Kemitraan
+Route::get('/register-driver', [DriverOnboardingController::class, 'create'])->name('register.driver');
+Route::post('/register-driver', [DriverOnboardingController::class, 'store'])->name('register.driver.store');
+
 // Biometric & Screen Lock Authentication
 Route::post('/biometric/login', [BiometricAuthController::class, 'login'])->name('biometric.login');
 Route::middleware('auth')->group(function () {
     Route::post('/biometric/register', [BiometricAuthController::class, 'register'])->name('biometric.register');
     Route::get('/biometric/status', [BiometricAuthController::class, 'status'])->name('biometric.status');
     Route::post('/biometric/disable', [BiometricAuthController::class, 'disable'])->name('biometric.disable');
+
+    // Handshake Kemitraan Supir & Ekspedisi
+    Route::get('/api/driver/partnerships', [DriverOnboardingController::class, 'getPartnerships'])->name('driver.partnerships');
+    Route::post('/api/driver/handshake', [DriverOnboardingController::class, 'connectHandshake'])->name('driver.handshake');
+    Route::get('/api/expedition/handshake-qr', [DriverOnboardingController::class, 'getExpeditionQr'])->name('expedition.handshake.qr');
 });
 
 // Direct Download APK Supir & Gudang

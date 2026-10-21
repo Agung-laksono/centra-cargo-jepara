@@ -23,6 +23,11 @@ class User extends Authenticatable
         return $this->belongsTo(Warehouse::class);
     }
 
+    public function driver()
+    {
+        return $this->hasOne(Driver::class);
+    }
+
     /**
      * Get the attributes that should be cast.
      *

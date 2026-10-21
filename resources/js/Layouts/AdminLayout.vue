@@ -8,6 +8,7 @@ let globalWasSwiped = false; // Flag untuk deteksi navigasi via swipe
 import { ref, onMounted, onUnmounted, onBeforeUnmount, onUpdated, provide, computed } from 'vue';
 import { Link, Head, router, usePage } from '@inertiajs/vue3';
 import { useBiometricAuth } from '@/Composables/useBiometricAuth';
+import ExpeditionHandshakeModal from '@/Components/ExpeditionHandshakeModal.vue';
 
 // Mendefinisikan properti (props) yang bisa diterima oleh Layout ini
 // Misalnya: judul halaman yang akan tampil di Header
@@ -47,6 +48,7 @@ const {
 const showBiometricBanner = ref(false);
 const biometricSuccessMsg = ref(null);
 const isBiometricModalOpen = ref(false);
+const isHandshakeModalOpen = ref(false);
 
 const handleActivateBiometric = async () => {
     try {
@@ -656,12 +658,23 @@ const transitionProps = computed(() => {
                         </p>
                     </div>
                 </div>
+                <!-- Tombol QR Kemitraan Armada Supir -->
+                <button
+                    v-if="!isCollapsed"
+                    type="button"
+                    @click="isHandshakeModalOpen = true"
+                    class="text-gray-400 hover:text-blue-600 transition-colors p-2 rounded-lg hover:bg-blue-50 shrink-0 ml-auto"
+                    title="Tampilkan QR Kemitraan Armada Supir"
+                >
+                    <i class="ri-qr-code-line text-lg"></i>
+                </button>
+
                 <!-- Tombol Kunci Layar / Biometrik -->
                 <button
                     v-if="isBiometricSupported && !isCollapsed"
                     type="button"
                     @click="isBiometricModalOpen = true"
-                    class="text-gray-400 hover:text-primary transition-colors p-2 rounded-lg hover:bg-primary/10 shrink-0 ml-auto"
+                    class="text-gray-400 hover:text-primary transition-colors p-2 rounded-lg hover:bg-primary/10 shrink-0 ml-1"
                     :title="biometricRegisteredUser ? 'Kunci Layar HP Aktif' : 'Aktifkan Kunci Layar HP'"
                 >
                     <i :class="biometricRegisteredUser ? 'ri-fingerprint-line text-emerald-600' : 'ri-fingerprint-line text-gray-400'" class="text-lg"></i>
@@ -1070,6 +1083,18 @@ const transitionProps = computed(() => {
                             <i class="ri-community-line text-xl"></i>
                             Ekspedisi (Agregator)
                         </Link>
+
+                        <button
+                            type="button"
+                            @click="showMobileMenu = false; isHandshakeModalOpen = true"
+                            class="w-full flex items-center justify-between p-4 rounded-xl transition font-medium bg-blue-50/70 text-blue-800 hover:bg-blue-100/70 border border-blue-100"
+                        >
+                            <div class="flex items-center gap-3">
+                                <i class="ri-qr-code-line text-xl text-blue-600"></i>
+                                <span>QR Kemitraan Armada Supir</span>
+                            </div>
+                            <i class="ri-arrow-right-s-line text-blue-400"></i>
+                        </button>
                         
                         <button
                             v-if="isBiometricSupported"
@@ -1272,6 +1297,12 @@ const transitionProps = computed(() => {
                 </div>
             </div>
         </Transition>
+
+        <!-- Modal QR Kemitraan Armada Supir -->
+        <ExpeditionHandshakeModal
+            :show="isHandshakeModalOpen"
+            @close="isHandshakeModalOpen = false"
+        />
 
     </div>
 </template>
