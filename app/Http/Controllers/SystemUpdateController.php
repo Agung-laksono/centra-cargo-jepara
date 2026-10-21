@@ -133,25 +133,30 @@ class SystemUpdateController extends Controller
                     ]);
 
                 case 3:
-                    // Fase 3: Ekstrak dan Timpa File Aplikasi
+                    // Fase 3: Aktifkan Maintenance Mode, Ekstrak dan Timpa File Aplikasi
+                    app(\App\Services\BackupService::class)->enableMaintenanceMode();
                     $updateService->extractAndApplyUpdate();
                     return response()->json([
                         'status' => 'success',
                         'step' => 3,
-                        'message' => 'Fase 3/4 Selesai: Berkas sistem berhasil diperbarui dan ditimpa secara aman.',
+                        'message' => 'Fase 3/4 Selesai: Berkas sistem berhasil diperbarui dan ditimpa secara aman (Mode Pemeliharaan Aktif).',
                     ]);
 
                 case 4:
-                    // Fase 4: Migrasi & Reset Cache
+                    // Fase 4: Migrasi & Reset Cache, lalu Buka kembali Maintenance Mode
                     $commitSha = $request->input('commit_sha');
                     $updateService->finalizeUpdate($commitSha);
+                    app(\App\Services\BackupService::class)->disableMaintenanceMode();
                     return response()->json([
                         'status' => 'success',
                         'step' => 4,
-                        'message' => 'Pembaruan Selesai 100%! Sistem berhasil diperbarui ke versi terbaru.',
+                        'message' => 'Pembaruan Selesai 100%! Sistem berhasil diperbarui dan dibuka kembali secara normal.',
                     ]);
             }
         } catch (Exception $e) {
+            // Pastikan maintenance mode selalu dinonaktifkan jika terjadi error agar sistem tidak terkunci
+            app(\App\Services\BackupService::class)->disableMaintenanceMode();
+
             return response()->json([
                 'status' => 'error',
                 'step' => $step,

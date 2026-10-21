@@ -14,6 +14,7 @@ const props = defineProps({
     roles: Array,
     warehouses: Array,
     github: { type: Object, default: () => ({ repo: '', branch: 'main', current_sha: null }) },
+    backups: { type: Array, default: () => [] },
 });
 
 // -- TAB STATE --
@@ -27,6 +28,7 @@ const topTabs = computed(() => {
         return [
             { id: 'tabApp', label: 'Informasi Aplikasi', shortLabel: 'Aplikasi', icon: 'ri-global-line' },
             { id: 'tabUsers', label: 'Pengguna Sistem', shortLabel: 'Pengguna', icon: 'ri-user-settings-line' },
+            { id: 'tabBackup', label: 'Cadangan & Pemulihan', shortLabel: 'Backup', icon: 'ri-database-2-line' },
             { id: 'tabUpdate', label: 'Pembaruan Sistem', shortLabel: 'Update', icon: 'ri-refresh-line' },
         ];
     }
@@ -416,6 +418,178 @@ const purgeAllCache = async () => {
     } catch (e) {
         isPurgingCache.value = false;
         cacheToastMessage.value = 'Gagal membersihkan cache: ' + (e.message || e);
+    }
+};
+
+// =======================
+// BACKUP & RESTORE LOGIC (SUPER ADMIN)
+// =======================
+const backupList = ref(props.backups || []);
+const isCreatingBackup = ref(false);
+const isUploadingBackup = ref(false);
+const uploadProgress = ref(0);
+const backupFileInput = ref(null);
+const backupToast = ref(null);
+
+const isRestoreModalOpen = ref(false);
+const selectedBackupForRestore = ref(null);
+const restoreAgreed = ref(false);
+const isRestoring = ref(false);
+const restoreStatusMessage = ref('');
+
+const isDeleteModalOpen = ref(false);
+const selectedBackupForDelete = ref(null);
+const isDeleting = ref(false);
+
+const totalStorageSizeFormatted = computed(() => {
+    let totalBytes = 0;
+    for (const b of backupList.value) {
+        totalBytes += (b.size_bytes || 0);
+    }
+    if (totalBytes >= 1048576) {
+        return (totalBytes / 1048576).toFixed(2) + ' MB';
+    }
+    return (totalBytes / 1024).toFixed(2) + ' KB';
+});
+
+const latestBackupFormatted = computed(() => {
+    return backupList.value.length > 0 ? backupList.value[0].human_date : 'Belum Ada';
+});
+
+const showBackupToast = (msg, type = 'success') => {
+    backupToast.value = { message: msg, type };
+    setTimeout(() => {
+        backupToast.value = null;
+    }, 4500);
+};
+
+const createManualBackup = async () => {
+    isCreatingBackup.value = true;
+    try {
+        const res = await window.axios.post(route('settings.backups.create'));
+        if (res.data.status === 'success') {
+            backupList.value = res.data.backups;
+            showBackupToast(res.data.message || 'Cadangan sistem berhasil dibuat!');
+        }
+    } catch (err) {
+        alert(err.response?.data?.message || err.message || 'Gagal membuat cadangan sistem.');
+    } finally {
+        isCreatingBackup.value = false;
+    }
+};
+
+const triggerUploadPicker = () => {
+    backupFileInput.value?.click();
+};
+
+const handleFileUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 200 * 1024 * 1024) {
+        alert('Ukuran file melebihi batas 200MB!');
+        event.target.value = '';
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('backup_file', file);
+
+    isUploadingBackup.value = true;
+    uploadProgress.value = 0;
+
+    try {
+        const res = await window.axios.post(route('settings.backups.upload'), formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            onUploadProgress: (progressEvent) => {
+                if (progressEvent.total) {
+                    uploadProgress.value = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                }
+            },
+        });
+
+        if (res.data.status === 'success') {
+            backupList.value = res.data.backups;
+            showBackupToast(res.data.message || 'Berkas cadangan berhasil diunggah!');
+        }
+    } catch (err) {
+        alert(err.response?.data?.message || err.message || 'Gagal mengunggah berkas cadangan.');
+    } finally {
+        isUploadingBackup.value = false;
+        uploadProgress.value = 0;
+        if (backupFileInput.value) {
+            backupFileInput.value.value = '';
+        }
+    }
+};
+
+const downloadBackup = (backup) => {
+    window.location.href = route('settings.backups.download', { name: backup.name });
+};
+
+const openRestoreModal = (backup) => {
+    selectedBackupForRestore.value = backup;
+    restoreAgreed.value = false;
+    restoreStatusMessage.value = '';
+    isRestoreModalOpen.value = true;
+};
+
+const closeRestoreModal = () => {
+    if (isRestoring.value) return;
+    isRestoreModalOpen.value = false;
+    selectedBackupForRestore.value = null;
+    restoreAgreed.value = false;
+};
+
+const confirmRestore = async () => {
+    if (!restoreAgreed.value || !selectedBackupForRestore.value) return;
+
+    isRestoring.value = true;
+    restoreStatusMessage.value = 'Mengunci sistem (Mode Pemeliharaan) & membuat Safety Snapshot...';
+
+    try {
+        const res = await window.axios.post(route('settings.backups.restore'), {
+            name: selectedBackupForRestore.value.name,
+        });
+
+        if (res.data.status === 'success') {
+            restoreStatusMessage.value = 'Pemulihan data berhasil! Memuat ulang sistem...';
+            setTimeout(() => {
+                window.location.reload();
+            }, 1800);
+        }
+    } catch (err) {
+        isRestoring.value = false;
+        alert(err.response?.data?.message || err.message || 'Gagal memulihkan cadangan sistem.');
+    }
+};
+
+const openDeleteModal = (backup) => {
+    selectedBackupForDelete.value = backup;
+    isDeleteModalOpen.value = true;
+};
+
+const closeDeleteModal = () => {
+    if (isDeleting.value) return;
+    isDeleteModalOpen.value = false;
+    selectedBackupForDelete.value = null;
+};
+
+const confirmDelete = async () => {
+    if (!selectedBackupForDelete.value) return;
+    isDeleting.value = true;
+    try {
+        const res = await window.axios.delete(route('settings.backups.destroy', { name: selectedBackupForDelete.value.name }));
+        if (res.data.status === 'success') {
+            backupList.value = res.data.backups;
+            showBackupToast(res.data.message || 'Berkas cadangan berhasil dihapus.');
+            isDeleteModalOpen.value = false;
+            selectedBackupForDelete.value = null;
+        }
+    } catch (err) {
+        alert(err.response?.data?.message || err.message || 'Gagal menghapus berkas cadangan.');
+    } finally {
+        isDeleting.value = false;
     }
 };
 </script>
@@ -834,6 +1008,242 @@ const purgeAllCache = async () => {
                             </table>
                         </div>
                     </div>
+                </div>
+            </template>
+
+            <!-- TAB: CADANGAN & PEMULIHAN SISTEM (KHUSUS SUPER ADMIN) -->
+            <template v-if="isSuperAdmin" #tabBackup>
+                <div class="max-w-4xl mx-auto space-y-6">
+
+                    <!-- Banner Header Cadangan -->
+                    <div class="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-6 shadow-sm border border-slate-700/60 relative overflow-hidden">
+                        <div class="absolute -right-8 -bottom-8 w-56 h-56 bg-primary/20 rounded-full blur-3xl pointer-events-none"></div>
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+                            <div>
+                                <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/10 text-indigo-300 text-xs font-mono font-bold mb-2">
+                                    <i class="ri-shield-check-line"></i> SQLite & Media Assets Disaster Recovery
+                                </div>
+                                <h3 class="font-black text-xl text-white tracking-tight">Cadangan & Pemulihan Sistem</h3>
+                                <p class="text-xs sm:text-sm text-gray-300 mt-1 max-w-xl leading-relaxed">
+                                    Amankan salinan database SQLite, konfigurasi sistem, dan berkas media upload. Anda dapat mengunduh berkas ke komputer, mengunggah arsip baru, atau memulihkan data kapan saja.
+                                </p>
+                            </div>
+                            <div class="shrink-0 flex items-center gap-2">
+                                <span class="px-3 py-1.5 rounded-xl bg-white/10 text-indigo-200 text-xs font-mono border border-white/10 flex items-center gap-1.5">
+                                    <i class="ri-hard-drive-2-line"></i>
+                                    <span>Penyimpanan Aman Lokal</span>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Ringkasan Statistik Cadangan -->
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3.5">
+                            <div class="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-xl shrink-0">
+                                <i class="ri-database-2-line"></i>
+                            </div>
+                            <div>
+                                <p class="text-xs font-semibold text-gray-400">Total Berkas Cadangan</p>
+                                <p class="text-lg font-black text-dark">{{ backupList.length }} <span class="text-xs font-medium text-gray-500">Berkas</span></p>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3.5">
+                            <div class="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl shrink-0">
+                                <i class="ri-pie-chart-2-line"></i>
+                            </div>
+                            <div>
+                                <p class="text-xs font-semibold text-gray-400">Total Kapasitas</p>
+                                <p class="text-lg font-black text-dark">{{ totalStorageSizeFormatted }}</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3.5">
+                            <div class="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl shrink-0">
+                                <i class="ri-time-line"></i>
+                            </div>
+                            <div>
+                                <p class="text-xs font-semibold text-gray-400">Cadangan Terakhir</p>
+                                <p class="text-sm font-bold text-dark truncate max-w-[150px]">{{ latestBackupFormatted }}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Notifikasi / Toast Cadangan -->
+                    <div v-if="backupToast" class="p-4 rounded-xl border flex items-center justify-between gap-3 text-xs font-medium shadow-sm transition-all"
+                         :class="backupToast.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-red-50 text-red-800 border-red-200'">
+                        <div class="flex items-center gap-2">
+                            <i :class="backupToast.type === 'success' ? 'ri-checkbox-circle-fill text-emerald-600 text-base' : 'ri-error-warning-fill text-red-600 text-base'"></i>
+                            <span>{{ backupToast.message }}</span>
+                        </div>
+                        <button @click="backupToast = null" class="text-gray-400 hover:text-gray-600">
+                            <i class="ri-close-line"></i>
+                        </button>
+                    </div>
+
+                    <!-- Toolbar Aksi: Buat Cadangan & Unggah Berkas -->
+                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div>
+                                <h4 class="font-bold text-dark text-base">Kelola Arsip Cadangan</h4>
+                                <p class="text-xs text-gray-500 mt-0.5">
+                                    Format berkas yang didukung adalah <strong>.zip</strong> (database + media) dan <strong>.sqlite</strong>.
+                                </p>
+                            </div>
+
+                            <div class="flex items-center gap-2.5 shrink-0 flex-wrap">
+                                <!-- Tombol Unggah -->
+                                <button
+                                    type="button"
+                                    @click="triggerUploadPicker"
+                                    :disabled="isUploadingBackup || isCreatingBackup"
+                                    class="px-4 py-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-bold text-xs transition shadow-sm flex items-center gap-2"
+                                >
+                                    <i :class="isUploadingBackup ? 'ri-loader-4-line animate-spin text-primary' : 'ri-upload-cloud-2-line text-primary'" class="text-base"></i>
+                                    <span>{{ isUploadingBackup ? `Mengunggah (${uploadProgress}%)...` : 'Unggah Backup (.zip)' }}</span>
+                                </button>
+
+                                <!-- Tombol Buat Backup Sekarang -->
+                                <button
+                                    type="button"
+                                    @click="createManualBackup"
+                                    :disabled="isCreatingBackup || isUploadingBackup"
+                                    class="px-4 py-2.5 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary/90 transition shadow-md shadow-primary/20 flex items-center gap-2"
+                                >
+                                    <i :class="isCreatingBackup ? 'ri-loader-4-line animate-spin' : 'ri-save-3-line'" class="text-base"></i>
+                                    <span>{{ isCreatingBackup ? 'Mencadangkan Data...' : 'Buat Backup Sekarang' }}</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Progress Bar Unggah -->
+                        <div v-if="isUploadingBackup" class="pt-2 border-t border-gray-100 space-y-1.5">
+                            <div class="flex items-center justify-between text-xs text-gray-600 font-medium">
+                                <span>Mengunggah berkas cadangan ke server...</span>
+                                <span class="font-bold text-primary">{{ uploadProgress }}%</span>
+                            </div>
+                            <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                                <div class="h-full bg-primary rounded-full transition-all duration-150" :style="{ width: `${uploadProgress}%` }"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tabel Daftar Berkas Cadangan -->
+                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                        <div class="p-4 border-b border-gray-100 flex items-center justify-between">
+                            <h4 class="font-bold text-dark text-sm flex items-center gap-2">
+                                <i class="ri-folder-zip-line text-primary text-base"></i>
+                                Riwayat Berkas Cadangan di Server
+                            </h4>
+                            <span class="text-xs text-gray-400 font-medium font-mono">storage/app/backups/</span>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-50/80 border-b border-gray-100 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                                        <th class="p-4">Nama Berkas</th>
+                                        <th class="p-4">Tipe Cadangan</th>
+                                        <th class="p-4">Tanggal Dibuat</th>
+                                        <th class="p-4">Ukuran</th>
+                                        <th class="p-4 text-right">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100 text-sm">
+                                    <tr v-for="b in backupList" :key="b.name" class="hover:bg-gray-50/60 transition">
+                                        <td class="p-4">
+                                            <div class="flex items-center gap-3">
+                                                <div class="w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 shadow-sm"
+                                                     :class="b.is_zip ? 'bg-indigo-50 text-indigo-600' : 'bg-amber-50 text-amber-600'">
+                                                    <i :class="b.is_zip ? 'ri-file-zip-line' : 'ri-database-2-line'"></i>
+                                                </div>
+                                                <div class="min-w-0">
+                                                    <span class="font-bold text-dark text-xs block font-mono truncate max-w-[240px] sm:max-w-xs" :title="b.name">
+                                                        {{ b.name }}
+                                                    </span>
+                                                    <span class="text-[11px] text-gray-400 block mt-0.5">
+                                                        {{ b.human_date }}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </td>
+
+                                        <td class="p-4">
+                                            <span v-if="b.type === 'Safety Snapshot'" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800">
+                                                <i class="ri-shield-flash-line text-[10px]"></i> Safety Snapshot
+                                            </span>
+                                            <span v-else-if="b.type === 'Sistem / Otomatis'" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800">
+                                                <i class="ri-refresh-line text-[10px]"></i> Auto Update
+                                            </span>
+                                            <span v-else-if="b.type === 'Unggahan'" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-800">
+                                                <i class="ri-upload-2-line text-[10px]"></i> Unggahan
+                                            </span>
+                                            <span v-else class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                                                <i class="ri-checkbox-circle-line text-[10px]"></i> Manual
+                                            </span>
+                                        </td>
+
+                                        <td class="p-4 text-xs text-gray-600 font-mono">
+                                            {{ b.date }}
+                                        </td>
+
+                                        <td class="p-4 text-xs font-bold text-gray-700 font-mono">
+                                            {{ b.size }}
+                                        </td>
+
+                                        <td class="p-4 text-right">
+                                            <div class="flex items-center justify-end gap-1.5">
+                                                <!-- Download -->
+                                                <button
+                                                    type="button"
+                                                    @click="downloadBackup(b)"
+                                                    class="w-8 h-8 rounded-lg bg-gray-100 text-gray-600 hover:bg-indigo-50 hover:text-indigo-600 inline-flex items-center justify-center transition shadow-sm"
+                                                    title="Unduh berkas ke komputer"
+                                                >
+                                                    <i class="ri-download-2-line"></i>
+                                                </button>
+
+                                                <!-- Restore -->
+                                                <button
+                                                    type="button"
+                                                    @click="openRestoreModal(b)"
+                                                    class="px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 text-xs font-bold inline-flex items-center gap-1 transition shadow-sm"
+                                                    title="Pulihkan database & aset dari cadangan ini"
+                                                >
+                                                    <i class="ri-history-line"></i>
+                                                    <span>Restore</span>
+                                                </button>
+
+                                                <!-- Delete -->
+                                                <button
+                                                    type="button"
+                                                    @click="openDeleteModal(b)"
+                                                    class="w-8 h-8 rounded-lg bg-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-600 inline-flex items-center justify-center transition shadow-sm"
+                                                    title="Hapus berkas cadangan"
+                                                >
+                                                    <i class="ri-delete-bin-line"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+
+                                    <tr v-if="backupList.length === 0">
+                                        <td colspan="5" class="p-8 text-center text-gray-500">
+                                            <div class="flex flex-col items-center justify-center space-y-2">
+                                                <i class="ri-database-2-line text-4xl text-gray-300"></i>
+                                                <p class="font-bold text-dark text-sm">Belum Ada Berkas Cadangan</p>
+                                                <p class="text-xs text-gray-400 max-w-sm">
+                                                    Klik tombol "Buat Backup Sekarang" untuk membuat salinan pertama atau unggah berkas arsip yang sudah ada.
+                                                </p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
                 </div>
             </template>
 
@@ -1259,6 +1669,152 @@ const purgeAllCache = async () => {
                         </button>
                     </div>
                 </form>
+            </div>
+        </div>
+
+        <!-- Hidden File Input for Backup Upload -->
+        <input
+            type="file"
+            ref="backupFileInput"
+            @change="handleFileUpload"
+            accept=".zip,.sqlite"
+            class="hidden"
+        />
+
+        <!-- MODAL KONFIRMASI RESTORE CADANGAN -->
+        <div v-if="isRestoreModalOpen" class="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <div class="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" @click="closeRestoreModal"></div>
+
+            <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl relative flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                <!-- Modal Header -->
+                <div class="px-6 py-4 bg-amber-500 text-white flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <i class="ri-alert-fill text-2xl"></i>
+                        <h3 class="font-black text-lg">Konfirmasi Pemulihan Sistem (Restore)</h3>
+                    </div>
+                    <button v-if="!isRestoring" @click="closeRestoreModal" class="text-white/80 hover:text-white">
+                        <i class="ri-close-line text-2xl"></i>
+                    </button>
+                </div>
+
+                <!-- Modal Body -->
+                <div class="p-6 space-y-4 text-sm text-gray-600">
+                    <div class="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-2 text-amber-900 text-xs">
+                        <p class="font-bold flex items-center gap-1.5 text-sm text-amber-950">
+                            <i class="ri-error-warning-line text-base text-amber-600"></i>
+                            Peringatan Kritis: Penimpaan Database & Media
+                        </p>
+                        <p class="leading-relaxed">
+                            Memulihkan cadangan akan <strong>menggantikan seluruh database operasional</strong> dan <strong>berkas foto/media</strong> aktif saat ini dengan data dari cadangan terpilih.
+                        </p>
+                    </div>
+
+                    <div class="bg-gray-50 p-4 rounded-xl space-y-2 border border-gray-100 font-mono text-xs">
+                        <div class="flex items-center justify-between">
+                            <span class="text-gray-400">Berkas Cadangan:</span>
+                            <span class="font-bold text-dark">{{ selectedBackupForRestore?.name }}</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-gray-400">Tanggal Dibuat:</span>
+                            <span class="text-gray-700">{{ selectedBackupForRestore?.date }}</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-gray-400">Ukuran:</span>
+                            <span class="text-gray-700">{{ selectedBackupForRestore?.size }}</span>
+                        </div>
+                    </div>
+
+                    <div class="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-xs flex items-start gap-2">
+                        <i class="ri-shield-check-line text-blue-600 text-base shrink-0 mt-0.5"></i>
+                        <p class="leading-relaxed">
+                            <strong>Pengaman Otomatis:</strong> Sistem akan otomatis mengaktifkan <strong>Mode Pemeliharaan (Maintenance Mode)</strong> dan membuat <strong>Safety Snapshot</strong> dari database saat ini sebelum penimpaan dilakukan.
+                        </p>
+                    </div>
+
+                    <!-- Status Loading Saat Restore Berlangsung -->
+                    <div v-if="isRestoring" class="p-4 bg-indigo-50 border border-indigo-200 rounded-xl text-center space-y-2">
+                        <i class="ri-loader-4-line animate-spin text-3xl text-indigo-600"></i>
+                        <p class="font-bold text-indigo-950 text-xs">{{ restoreStatusMessage }}</p>
+                        <p class="text-[11px] text-indigo-700">Mohon tidak menutup jendela atau merefresh browser...</p>
+                    </div>
+
+                    <!-- Checkbox Konfirmasi -->
+                    <div v-else class="pt-2">
+                        <label class="flex items-start gap-3 cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                v-model="restoreAgreed"
+                                class="mt-1 w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-amber-500"
+                            />
+                            <span class="text-xs text-gray-700 font-medium leading-relaxed">
+                                Saya mengerti risiko ini dan menyetujui pemulihan data sistem ke versi cadangan ini.
+                            </span>
+                        </label>
+                    </div>
+
+                    <!-- Modal Actions -->
+                    <div class="pt-4 flex gap-3 border-t border-gray-100">
+                        <button
+                            type="button"
+                            @click="closeRestoreModal"
+                            :disabled="isRestoring"
+                            class="flex-1 px-4 py-2.5 rounded-xl font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 transition text-sm disabled:opacity-50"
+                        >
+                            Batal
+                        </button>
+                        <button
+                            type="button"
+                            @click="confirmRestore"
+                            :disabled="!restoreAgreed || isRestoring"
+                            class="flex-1 px-4 py-2.5 rounded-xl font-bold text-white bg-amber-600 hover:bg-amber-700 transition text-sm shadow-md shadow-amber-600/30 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                            <i :class="isRestoring ? 'ri-loader-4-line animate-spin' : 'ri-history-line'"></i>
+                            <span>{{ isRestoring ? 'Memulihkan Data...' : 'Mulai Pemulihan' }}</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODAL KONFIRMASI HAPUS CADANGAN -->
+        <div v-if="isDeleteModalOpen" class="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <div class="absolute inset-0 bg-gray-900/50 backdrop-blur-sm" @click="closeDeleteModal"></div>
+
+            <div class="bg-white rounded-2xl w-full max-w-md shadow-2xl relative flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                <div class="p-6 space-y-4">
+                    <div class="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center text-2xl mx-auto shadow-sm">
+                        <i class="ri-delete-bin-line"></i>
+                    </div>
+
+                    <div class="text-center space-y-1">
+                        <h3 class="font-black text-lg text-dark">Hapus Berkas Cadangan?</h3>
+                        <p class="text-xs text-gray-500">Tindakan ini tidak dapat dibatalkan. Berkas akan dihapus permanen dari server.</p>
+                    </div>
+
+                    <div class="bg-gray-50 p-3 rounded-xl border border-gray-100 font-mono text-xs text-center font-bold text-gray-700 truncate">
+                        {{ selectedBackupForDelete?.name }}
+                    </div>
+
+                    <div class="pt-2 flex gap-3">
+                        <button
+                            type="button"
+                            @click="closeDeleteModal"
+                            :disabled="isDeleting"
+                            class="flex-1 px-4 py-2.5 rounded-xl font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 transition text-sm disabled:opacity-50"
+                        >
+                            Batal
+                        </button>
+                        <button
+                            type="button"
+                            @click="confirmDelete"
+                            :disabled="isDeleting"
+                            class="flex-1 px-4 py-2.5 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 transition text-sm shadow-md shadow-red-600/30 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                        >
+                            <i :class="isDeleting ? 'ri-loader-4-line animate-spin' : 'ri-delete-bin-line'"></i>
+                            <span>{{ isDeleting ? 'Menghapus...' : 'Hapus Sekarang' }}</span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     </AdminLayout>

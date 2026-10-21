@@ -75,6 +75,8 @@ class SettingController extends Controller
             'current_sha' => $githubSettings['system_current_sha'] ?? null,
         ] : null;
 
+        $backups = $isSuperAdmin ? app(\App\Services\BackupService::class)->getBackupsList() : [];
+
         return Inertia::render('Settings/Index', [
             'app' => $appData,
             'company' => $companyData,
@@ -83,6 +85,7 @@ class SettingController extends Controller
             'warehouses' => $warehouses,
             'currentExpedition' => $expedition,
             'github' => $githubData,
+            'backups' => $backups,
         ]);
     }
 

@@ -1229,6 +1229,14 @@ Route::middleware('auth')->group(function () {
     Route::post('/settings/update/check', [\App\Http\Controllers\SystemUpdateController::class, 'check'])->name('settings.update.check');
     Route::post('/settings/update/config', [\App\Http\Controllers\SystemUpdateController::class, 'saveConfig'])->name('settings.update.config');
     Route::post('/settings/update/step', [\App\Http\Controllers\SystemUpdateController::class, 'executeStep'])->name('settings.update.step');
+
+    // Manajemen Cadangan & Pemulihan Sistem (Super Admin)
+    Route::get('/settings/backups', [\App\Http\Controllers\BackupController::class, 'index'])->name('settings.backups.index');
+    Route::post('/settings/backups/create', [\App\Http\Controllers\BackupController::class, 'create'])->name('settings.backups.create');
+    Route::post('/settings/backups/upload', [\App\Http\Controllers\BackupController::class, 'upload'])->name('settings.backups.upload');
+    Route::get('/settings/backups/{name}/download', [\App\Http\Controllers\BackupController::class, 'download'])->name('settings.backups.download');
+    Route::post('/settings/backups/restore', [\App\Http\Controllers\BackupController::class, 'restore'])->name('settings.backups.restore');
+    Route::delete('/settings/backups/{name}', [\App\Http\Controllers\BackupController::class, 'destroy'])->name('settings.backups.destroy');
 });
 
 require __DIR__.'/auth.php';
