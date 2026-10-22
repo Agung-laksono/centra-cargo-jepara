@@ -260,6 +260,12 @@ const selectSender = (sender) => {
     showSenderDropdown.value = false;
 };
 
+const selectFirstSender = () => {
+    if (filteredSenders.value.length > 0) {
+        selectSender(filteredSenders.value[0]);
+    }
+};
+
 const searchRecipientQuery = ref('');
 const showRecipientDropdown = ref(false);
 
@@ -287,7 +293,7 @@ const resetRecipient = () => {
     selectedProvinceId.value = ''; // ini akan memicu watcher membersihkan data kota dst
 };
 
-const selectRecipient = (recipient) => {
+const selectRecipient = async (recipient) => {
     form.recipient_name = recipient.recipient_name;
     form.recipient_phone = recipient.recipient_phone;
     form.recipient_address = recipient.recipient_address || '';
@@ -295,26 +301,52 @@ const selectRecipient = (recipient) => {
     showRecipientDropdown.value = false;
     isRecipientSelected.value = true;
 
-    if(recipient.destination_province && recipient.destination_province.id) {
-        selectedProvinceId.value = recipient.destination_province.id;
-        let cityInterval = setInterval(() => {
-            if(cities.value.length > 0) {
-                clearInterval(cityInterval);
-                selectedCityId.value = recipient.destination_city.id;
-                let distInterval = setInterval(() => {
-                    if(districts.value.length > 0) {
-                        clearInterval(distInterval);
-                        selectedDistrictId.value = recipient.destination_district.id;
-                        let vilInterval = setInterval(() => {
-                            if(villages.value.length > 0) {
-                                clearInterval(vilInterval);
-                                form.destination_village = recipient.destination_village;
-                            }
-                        }, 100);
+    const provVal = recipient.destination_province;
+    const cityVal = recipient.destination_city;
+    const distVal = recipient.destination_district;
+    const vilVal = recipient.destination_village;
+
+    const provName = (typeof provVal === 'object' ? provVal?.name : provVal) || '';
+    const cityName = (typeof cityVal === 'object' ? cityVal?.name : cityVal) || '';
+    const distName = (typeof distVal === 'object' ? distVal?.name : distVal) || '';
+    const vilName = (typeof vilVal === 'object' ? vilVal?.name : vilVal) || '';
+
+    if (provName) {
+        let targetProv = provinces.value.find(p => p.id == provVal?.id || (p.name && provName && p.name.toLowerCase() === provName.toLowerCase()));
+        if (!targetProv && provinces.value.length === 0) {
+            provinces.value = await fetchWilayahData('/api/wilayah/provinces', 'provinces');
+            targetProv = provinces.value.find(p => p.id == provVal?.id || (p.name && provName && p.name.toLowerCase() === provName.toLowerCase()));
+        }
+
+        if (targetProv) {
+            selectedProvinceId.value = targetProv.id;
+            const regList = await fetchWilayahData(`/api/wilayah/regencies/${targetProv.id}`, 'regency', targetProv.id);
+            cities.value = regList;
+            
+            const targetCity = regList.find(c => c.id == cityVal?.id || (c.name && cityName && c.name.toLowerCase() === cityName.toLowerCase()));
+            if (targetCity) {
+                selectedCityId.value = targetCity.id;
+                const distList = await fetchWilayahData(`/api/wilayah/districts/${targetCity.id}`, 'district', targetCity.id);
+                districts.value = distList;
+
+                const targetDist = distList.find(d => d.id == distVal?.id || (d.name && distName && d.name.toLowerCase() === distName.toLowerCase()));
+                if (targetDist) {
+                    selectedDistrictId.value = targetDist.id;
+                    const vilList = await fetchWilayahData(`/api/wilayah/villages/${targetDist.id}`, 'village', targetDist.id);
+                    villages.value = vilList;
+
+                    if (vilName) {
+                        form.destination_village = vilName;
                     }
-                }, 100);
+                }
             }
-        }, 100);
+        }
+    }
+};
+
+const selectFirstRecipient = () => {
+    if (filteredRecipients.value.length > 0) {
+        selectRecipient(filteredRecipients.value[0]);
     }
 };
 
@@ -385,29 +417,37 @@ const searchWilayah = async (event) => {
     showWilayahDropdown.value = true;
 };
 
-const selectWilayah = (wil) => {
+const selectWilayah = async (wil) => {
     searchWilayahQuery.value = `${wil.village_name}, ${wil.district_name}, ${wil.city_name}, ${wil.province_name}`;
     showWilayahDropdown.value = false;
 
-    selectedProvinceId.value = wil.province_id;
-    let cityInterval = setInterval(() => {
-        if(cities.value.some(c => c.id == wil.city_id)) {
-            clearInterval(cityInterval);
+    if (wil.province_id) {
+        selectedProvinceId.value = wil.province_id;
+        const regList = await fetchWilayahData(`/api/wilayah/regencies/${wil.province_id}`, 'regency', wil.province_id);
+        cities.value = regList;
+
+        if (wil.city_id) {
             selectedCityId.value = wil.city_id;
-            let distInterval = setInterval(() => {
-                if(districts.value.some(d => d.id == wil.district_id)) {
-                    clearInterval(distInterval);
-                    selectedDistrictId.value = wil.district_id;
-                    let vilInterval = setInterval(() => {
-                        if(villages.value.some(v => v.name == wil.village_name)) {
-                            clearInterval(vilInterval);
-                            form.destination_village = wil.village_name;
-                        }
-                    }, 100);
+            const distList = await fetchWilayahData(`/api/wilayah/districts/${wil.city_id}`, 'district', wil.city_id);
+            districts.value = distList;
+
+            if (wil.district_id) {
+                selectedDistrictId.value = wil.district_id;
+                const vilList = await fetchWilayahData(`/api/wilayah/villages/${wil.district_id}`, 'village', wil.district_id);
+                villages.value = vilList;
+
+                if (wil.village_name) {
+                    form.destination_village = wil.village_name;
                 }
-            }, 100);
+            }
         }
-    }, 100);
+    }
+};
+
+const selectFirstWilayah = () => {
+    if (wilayahResults.value.length > 0) {
+        selectWilayah(wilayahResults.value[0]);
+    }
 };
 
 // Modal state untuk Pengirim Baru
@@ -744,9 +784,13 @@ const cetakResi = async (url) => {
             iframe.contentWindow.focus();
             iframe.contentWindow.print();
             
-            // Bersihkan iframe setelah beberapa detik
+            // Bersihkan iframe setelah beberapa detik secara aman
             setTimeout(() => {
-                document.body.removeChild(iframe);
+                try {
+                    if (iframe && iframe.parentNode) {
+                        iframe.parentNode.removeChild(iframe);
+                    }
+                } catch (e) {}
             }, 5000);
         };
     }
@@ -1132,6 +1176,7 @@ const financeSummary = computed(() => {
                                             :disabled="!!form.sender_id"
                                             @focus="!form.sender_id && (showSenderDropdown = true)"
                                             @blur="handleSenderBlur"
+                                            @keydown.enter.prevent="selectFirstSender"
                                             placeholder="Ketik nama atau nomor HP..." 
                                             class="w-full bg-gray-50 border border-gray-200 text-gray-800 rounded-xl pl-10 pr-10 py-3 focus:bg-white focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all disabled:opacity-80 disabled:bg-gray-100 disabled:cursor-not-allowed"
                                         >
@@ -1227,6 +1272,7 @@ const financeSummary = computed(() => {
                                         :disabled="isRecipientSelected"
                                         @focus="!isRecipientSelected && (showRecipientDropdown = true)"
                                         @blur="handleRecipientBlur"
+                                        @keydown.enter.prevent="selectFirstRecipient"
                                         @input="showRecipientDropdown = true; form.recipient_name = $event.target.value"
                                         placeholder="Ketik Bpk. Andi atau pilih dari riwayat..." 
                                         class="w-full bg-gray-50 border border-gray-200 text-gray-800 rounded-xl px-4 py-3 pl-11 pr-10 focus:bg-white focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all disabled:opacity-80 disabled:bg-gray-100 disabled:cursor-not-allowed"
@@ -1248,7 +1294,7 @@ const financeSummary = computed(() => {
                                             class="px-4 py-3 hover:bg-primary/5 cursor-pointer border-b border-gray-50 last:border-0 transition-colors flex items-center justify-between group">
                                             <div>
                                                 <div class="font-bold text-gray-800 group-hover:text-primary transition-colors">{{ recipient.recipient_name }}</div>
-                                                <div class="text-xs text-gray-500"><i class="ri-map-pin-line mr-1"></i>{{ recipient.destination_city && recipient.destination_city.name ? recipient.destination_city.name : 'Riwayat' }}</div>
+                                                <div class="text-xs text-gray-500"><i class="ri-map-pin-line mr-1"></i>{{ (typeof recipient.destination_city === 'object' ? recipient.destination_city?.name : recipient.destination_city) || 'Riwayat' }}</div>
                                             </div>
                                             <div class="text-xs font-medium text-gray-400 bg-gray-100 px-2 py-1 rounded-md">{{ recipient.recipient_phone }}</div>
                                         </li>
@@ -1272,6 +1318,7 @@ const financeSummary = computed(() => {
                                         @input="searchWilayah"
                                         @focus="!isRecipientSelected && searchWilayahQuery.length >= 3 && (showWilayahDropdown = true)"
                                         @blur="handleWilayahBlur"
+                                        @keydown.enter.prevent="selectFirstWilayah"
                                         placeholder="Ketik nama kecamatan atau desa..." 
                                         class="w-full bg-white border border-gray-300 text-gray-800 rounded-xl px-4 py-3 pl-11 focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none shadow-sm transition-all disabled:opacity-80 disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     >

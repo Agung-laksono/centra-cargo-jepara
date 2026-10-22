@@ -347,7 +347,11 @@
         window.onafterprint = function() {
             if (window.self !== window.top) {
                 // Jika dicetak dari PC (lewat Iframe yang tersembunyi)
-                window.parent.document.body.removeChild(window.frameElement);
+                try {
+                    if (window.frameElement && window.frameElement.parentNode) {
+                        window.frameElement.parentNode.removeChild(window.frameElement);
+                    }
+                } catch (e) {}
             }
         };
 

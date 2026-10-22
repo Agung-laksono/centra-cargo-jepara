@@ -1,5 +1,5 @@
-const CACHE_NAME = 'jepara-cargo-v9';
-const ASSET_CACHE = 'jepara-assets-v9';
+const CACHE_NAME = 'jepara-cargo-v10';
+const ASSET_CACHE = 'jepara-assets-v10';
 
 self.addEventListener('install', (event) => {
     event.waitUntil(self.skipWaiting());

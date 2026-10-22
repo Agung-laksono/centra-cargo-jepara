@@ -74,20 +74,34 @@ if (typeof window !== 'undefined') {
         }
     }, true);
 
-    // Observer untuk mendeteksi elemen baru yang di-render secara dinamis
+    // Observer cerdas untuk mendeteksi elemen input/form baru yang di-render secara dinamis
+    let debounceTimer = null;
     const observer = new MutationObserver((mutations) => {
+        let hasNewInputs = false;
         for (const mutation of mutations) {
-            if (mutation.addedNodes.length > 0) {
-                disableAutocompleteGlobally();
-                break;
+            for (const node of mutation.addedNodes) {
+                if (node.nodeType === 1) {
+                    if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.tagName === 'FORM' || (node.querySelector && node.querySelector('input, textarea'))) {
+                        hasNewInputs = true;
+                        break;
+                    }
+                }
             }
+            if (hasNewInputs) break;
+        }
+        if (hasNewInputs) {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(disableAutocompleteGlobally, 150);
         }
     });
 
-    observer.observe(document.documentElement, {
-        childList: true,
-        subtree: true,
-    });
+    if (document.body) {
+        observer.observe(document.body, { childList: true, subtree: true });
+    } else {
+        window.addEventListener('DOMContentLoaded', () => {
+            observer.observe(document.body, { childList: true, subtree: true });
+        });
+    }
 }
 
 // Tampilkan loading overlay agar tidak terlihat nge-hang
